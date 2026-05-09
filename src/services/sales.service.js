@@ -834,7 +834,7 @@ exports.getLoyaltyConfig = async () => {
     const config = await getLoyaltyConfigRecord();
     return {
         ...config,
-        descripcion: `${config.puntos_por_bloque} punto(s) por cada $${config.monto_por_punto}`
+        descripcion: `${config.puntos_por_bloque} punto(s) por cada Q${config.monto_por_punto}`
     };
 };
 
