@@ -1250,6 +1250,8 @@ exports.deleteClient = async (clientRef) => {
     }
 };
 
+// Función para obtener las ventas confirmadas de un vendedor específico, con límite opcional.
+
 exports.getSalesBySeller = async (vendedor, limit = 100) => {
     if (!vendedor || !vendedor.trim()) {
         throw new Error('El vendedor es obligatorio');
@@ -1276,3 +1278,5 @@ exports.getSalesBySeller = async (vendedor, limit = 100) => {
     const [rows] = await db.execute(sql, [vendedor.trim()]);
     return rows;
 };
+
+
