@@ -143,13 +143,26 @@ exports.createOpportunity = async (data) => {
     };
 };
 
-exports.getOpportunities = async (codigoCliente = '') => {
+exports.getOpportunities = async (codigoCliente = '', vendedor = '') => {
     await ensureOpportunitiesTable();
 
     const codigo = String(codigoCliente || '').trim();
+    const vendedorFilter = String(vendedor || '').trim();
 
-    const whereClause = codigo ? 'WHERE codigo_cliente = ?' : '';
-    const params = codigo ? [codigo] : [];
+    const filters = [];
+    const params = [];
+
+    if (codigo) {
+        filters.push('codigo_cliente = ?');
+        params.push(codigo);
+    }
+
+    if (vendedorFilter) {
+        filters.push('vendedor = ?');
+        params.push(vendedorFilter);
+    }
+
+    const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
 
     const sql = `
         SELECT
