@@ -46,3 +46,12 @@ exports.deleteReward = async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 };
+
+exports.redeemReward = async (req, res) => {
+    try {
+        const result = await service.redeemReward(req.body);
+        res.json(result);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
