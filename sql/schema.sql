@@ -52,12 +52,17 @@ CREATE TABLE IF NOT EXISTS ventas (
   codigo_cliente VARCHAR(100) NOT NULL,
   fecha DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   total DECIMAL(10,2) NOT NULL,
+  total_normal DECIMAL(10,2) NOT NULL DEFAULT 0,
+  descuento_aplicado DECIMAL(10,2) NOT NULL DEFAULT 0,
+  premio_id INT NULL,
+  codigo_cupon VARCHAR(40) NULL,
   estado VARCHAR(40) NOT NULL DEFAULT 'CONFIRMADA',
   vendedor VARCHAR(120) NOT NULL,
   KEY idx_ventas_fecha (fecha),
   KEY idx_ventas_cliente_id (cliente_id),
   KEY idx_ventas_codigo_cliente (codigo_cliente),
   KEY idx_ventas_vendedor (vendedor),
+  KEY idx_ventas_premio_id (premio_id),
   CONSTRAINT fk_ventas_cliente
     FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     ON UPDATE RESTRICT

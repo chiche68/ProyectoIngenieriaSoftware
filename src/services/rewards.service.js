@@ -73,6 +73,8 @@ async function ensureRewardsTables(executor = db) {
             descripcion TEXT NULL,
             costo_puntos INT NOT NULL,
             activo TINYINT(1) NOT NULL DEFAULT 1,
+            tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'MONTO',
+            valor_descuento DECIMAL(10,2) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_premios_activo (activo),
@@ -86,6 +88,7 @@ async function ensureRewardsTables(executor = db) {
             cliente_id INT NULL,
             codigo_cliente VARCHAR(100) NULL,
             premio_id INT NOT NULL,
+            factura_id INT NULL,
             puntos_canjeados INT NOT NULL,
             codigo_cupon VARCHAR(40) NOT NULL,
             estado VARCHAR(30) NOT NULL DEFAULT 'GENERADO',
@@ -94,6 +97,7 @@ async function ensureRewardsTables(executor = db) {
             INDEX idx_canjes_cliente_id (cliente_id),
             INDEX idx_canjes_codigo_cliente (codigo_cliente),
             INDEX idx_canjes_premio_id (premio_id),
+            INDEX idx_canjes_factura_id (factura_id),
             CONSTRAINT fk_canjes_premio
                 FOREIGN KEY (premio_id) REFERENCES premios(id)
                 ON UPDATE RESTRICT
@@ -112,22 +116,30 @@ async function seedDefaultRewards(executor = db) {
         {
             nombre: 'Descuento 3%',
             descripcion: 'Aplica 3% de descuento en la próxima venta.',
-            costo_puntos: 50
+            costo_puntos: 50,
+            tipo_descuento: 'PORCENTAJE',
+            valor_descuento: 3.00
         },
         {
             nombre: 'Descuento 10%',
             descripcion: 'Aplica 10% de descuento en la próxima venta.',
-            costo_puntos: 100
+            costo_puntos: 100,
+            tipo_descuento: 'PORCENTAJE',
+            valor_descuento: 10.00
         },
         {
             nombre: 'Descuento 25%',
             descripcion: 'Aplica 25% de descuento en la próxima venta.',
-            costo_puntos: 250
+            costo_puntos: 250,
+            tipo_descuento: 'PORCENTAJE',
+            valor_descuento: 25.00
         },
         {
             nombre: 'Descuento 50%',
             descripcion: 'Aplica 50% de descuento en la próxima venta.',
-            costo_puntos: 500
+            costo_puntos: 500,
+            tipo_descuento: 'PORCENTAJE',
+            valor_descuento: 50.00
         }
     ];
 
@@ -135,18 +147,20 @@ async function seedDefaultRewards(executor = db) {
     const total = Number(countRows?.[0]?.total || 0);
     if (total === 0) {
         const values = defaultRewards
-            .map(() => '(?, ?, ?, 1)')
+            .map(() => '(?, ?, ?, ?, ?, 1)')
             .join(',\n                ');
 
         const params = defaultRewards.flatMap((reward) => [
             reward.nombre,
             reward.descripcion,
-            reward.costo_puntos
+            reward.costo_puntos,
+            reward.tipo_descuento,
+            reward.valor_descuento
         ]);
 
         await executor.query(
             `
-                INSERT INTO premios (nombre, descripcion, costo_puntos, activo)
+                INSERT INTO premios (nombre, descripcion, costo_puntos, tipo_descuento, valor_descuento, activo)
                 VALUES
                 ${values}
             `,
@@ -165,18 +179,18 @@ async function seedDefaultRewards(executor = db) {
             await executor.execute(
                 `
                     UPDATE premios
-                    SET descripcion = ?, costo_puntos = ?, activo = 1
+                    SET descripcion = ?, costo_puntos = ?, activo = 1, tipo_descuento = ?, valor_descuento = ?
                     WHERE id = ?
                 `,
-                [reward.descripcion, reward.costo_puntos, rows[0].id]
+                [reward.descripcion, reward.costo_puntos, reward.tipo_descuento, reward.valor_descuento, rows[0].id]
             );
         } else {
             await executor.execute(
                 `
-                    INSERT INTO premios (nombre, descripcion, costo_puntos, activo)
-                    VALUES (?, ?, ?, 1)
+                    INSERT INTO premios (nombre, descripcion, costo_puntos, tipo_descuento, valor_descuento, activo)
+                    VALUES (?, ?, ?, ?, ?, 1)
                 `,
-                [reward.nombre, reward.descripcion, reward.costo_puntos]
+                [reward.nombre, reward.descripcion, reward.costo_puntos, reward.tipo_descuento, reward.valor_descuento]
             );
         }
     }
@@ -226,8 +240,16 @@ async function cleanupDeprecatedRewards(executor = db) {
 
 async function ensureRewardsInfrastructure(executor = db) {
     await ensureRewardsTables(executor);
+    await ensureRewardColumns(executor);
     await cleanupDeprecatedRewards(executor);
     await seedDefaultRewards(executor);
+}
+
+async function ensureRewardColumns(executor = db) {
+    await executor.query(`ALTER TABLE premios ADD COLUMN IF NOT EXISTS tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'MONTO'`);
+    await executor.query(`ALTER TABLE premios ADD COLUMN IF NOT EXISTS valor_descuento DECIMAL(10,2) NOT NULL DEFAULT 0`);
+    await executor.query(`ALTER TABLE canjes_premios ADD COLUMN IF NOT EXISTS factura_id INT NULL`);
+    await executor.query(`ALTER TABLE canjes_premios ADD INDEX IF NOT EXISTS idx_canjes_factura_id (factura_id)`);
 }
 
 function buildCouponCode() {
@@ -276,7 +298,7 @@ exports.getRewards = async () => {
 
     const [rows] = await db.execute(
         `
-            SELECT id, nombre, descripcion, costo_puntos
+            SELECT id, nombre, descripcion, costo_puntos, tipo_descuento, valor_descuento
             FROM premios
             WHERE activo = 1
             ORDER BY costo_puntos ASC, nombre ASC
@@ -291,7 +313,7 @@ exports.getAllRewards = async () => {
 
     const [rows] = await db.execute(
         `
-            SELECT id, nombre, descripcion, costo_puntos, activo
+            SELECT id, nombre, descripcion, costo_puntos, tipo_descuento, valor_descuento, activo
             FROM premios
             ORDER BY activo DESC, costo_puntos ASC, nombre ASC
         `
@@ -300,7 +322,7 @@ exports.getAllRewards = async () => {
     return rows;
 };
 
-exports.createReward = async ({ nombre, descripcion, costo_puntos, activo = 1 }) => {
+exports.createReward = async ({ nombre, descripcion, costo_puntos, tipo_descuento = 'MONTO', valor_descuento = 0, activo = 1 }) => {
     await ensureRewardsInfrastructure();
 
     const name = String(nombre || '').trim();
@@ -313,14 +335,28 @@ exports.createReward = async ({ nombre, descripcion, costo_puntos, activo = 1 })
         throw new Error('El costo en puntos debe ser un número entero mayor que 0');
     }
 
+    const discountType = String(tipo_descuento || 'MONTO').toUpperCase();
+    if (discountType !== 'MONTO' && discountType !== 'PORCENTAJE') {
+        throw new Error('El tipo de descuento no es válido');
+    }
+
+    const discountValue = Number(valor_descuento);
+    if (!Number.isFinite(discountValue) || discountValue <= 0) {
+        throw new Error('El valor del descuento debe ser mayor que 0');
+    }
+
+    if (discountType === 'PORCENTAJE' && discountValue > 100) {
+        throw new Error('El valor del descuento porcentual no puede ser mayor a 100');
+    }
+
     const activeValue = Number(activo) === 1 ? 1 : 0;
 
     const [result] = await db.execute(
         `
-            INSERT INTO premios (nombre, descripcion, costo_puntos, activo)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO premios (nombre, descripcion, costo_puntos, activo, tipo_descuento, valor_descuento)
+            VALUES (?, ?, ?, ?, ?, ?)
         `,
-        [name, String(descripcion || '').trim(), cost, activeValue]
+        [name, String(descripcion || '').trim(), cost, activeValue, discountType, discountValue]
     );
 
     return {
@@ -328,11 +364,13 @@ exports.createReward = async ({ nombre, descripcion, costo_puntos, activo = 1 })
         nombre: name,
         descripcion: String(descripcion || '').trim(),
         costo_puntos: cost,
+        tipo_descuento: discountType,
+        valor_descuento: discountValue,
         activo: activeValue
     };
 };
 
-exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, activo = 1 }) => {
+exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, tipo_descuento = 'MONTO', valor_descuento = 0, activo = 1 }) => {
     await ensureRewardsInfrastructure();
 
     const rewardId = Number(id);
@@ -350,6 +388,20 @@ exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, activo = 
         throw new Error('El costo en puntos debe ser un número entero mayor que 0');
     }
 
+    const discountType = String(tipo_descuento || 'MONTO').toUpperCase();
+    if (discountType !== 'MONTO' && discountType !== 'PORCENTAJE') {
+        throw new Error('El tipo de descuento no es válido');
+    }
+
+    const discountValue = Number(valor_descuento);
+    if (!Number.isFinite(discountValue) || discountValue <= 0) {
+        throw new Error('El valor del descuento debe ser mayor que 0');
+    }
+
+    if (discountType === 'PORCENTAJE' && discountValue > 100) {
+        throw new Error('El valor del descuento porcentual no puede ser mayor a 100');
+    }
+
     const activeValue = Number(activo) === 1 ? 1 : 0;
 
     const [existingRows] = await db.execute(
@@ -364,10 +416,10 @@ exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, activo = 
     await db.execute(
         `
             UPDATE premios
-            SET nombre = ?, descripcion = ?, costo_puntos = ?, activo = ?
+            SET nombre = ?, descripcion = ?, costo_puntos = ?, activo = ?, tipo_descuento = ?, valor_descuento = ?
             WHERE id = ?
         `,
-        [name, String(descripcion || '').trim(), cost, activeValue, rewardId]
+        [name, String(descripcion || '').trim(), cost, activeValue, discountType, discountValue, rewardId]
     );
 
     return {
@@ -375,6 +427,8 @@ exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, activo = 
         nombre: name,
         descripcion: String(descripcion || '').trim(),
         costo_puntos: cost,
+        tipo_descuento: discountType,
+        valor_descuento: discountValue,
         activo: activeValue
     };
 };

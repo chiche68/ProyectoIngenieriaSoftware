@@ -1,4 +1,5 @@
-﻿const db = require('../config/database');
+﻿const crypto = require('crypto');
+const db = require('../config/database');
 const DEFAULT_POINTS_PER_AMOUNT = 10;
 const DEFAULT_POINTS_AWARDED = 1;
 
@@ -40,6 +41,14 @@ async function hasColumn(tableName, columnName, executor = db) {
 
     const [rows] = await executor.execute(sql, [tableName, columnName]);
     return rows.length > 0;
+}
+
+async function ensureSalesRewardColumns(executor = db) {
+    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS total_normal DECIMAL(10,2) NOT NULL DEFAULT 0`);
+    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS descuento_aplicado DECIMAL(10,2) NOT NULL DEFAULT 0`);
+    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS premio_id INT NULL`);
+    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS codigo_cupon VARCHAR(40) NULL`);
+    await executor.query(`ALTER TABLE ventas ADD INDEX IF NOT EXISTS idx_ventas_premio_id (premio_id)`);
 }
 
 exports.getClients = async () => {
@@ -594,6 +603,7 @@ exports.create = async (data) => {
     const estado = data.estado && data.estado.trim()
         ? data.estado.trim().toUpperCase()
         : 'CONFIRMADA';
+    const rewardId = data.reward_id ? Number(data.reward_id) : null;
     const hasCodigoCliente = await hasColumn('ventas', 'codigo_cliente');
     const hasClienteId = await hasColumn('ventas', 'cliente_id');
 
@@ -602,6 +612,7 @@ exports.create = async (data) => {
     }
 
     await ensureLoyaltyInfrastructure();
+    await ensureSalesRewardColumns();
 
     const loyaltyConfig = await getLoyaltyConfigRecord();
     const connection = await db.getConnection();
@@ -611,6 +622,68 @@ exports.create = async (data) => {
 
         const resolvedClient = await resolveClientForSale(data, connection);
         const codigoCliente = resolvedClient.codigoCliente ? String(resolvedClient.codigoCliente).trim() : '';
+
+        let rewardRecord = null;
+        let discountAmount = 0;
+        let couponCode = null;
+        let rewardCost = 0;
+        let rewardInvoice = null;
+
+        if (Number.isInteger(rewardId) && rewardId > 0) {
+            const [rewardRows] = await connection.execute(
+                `
+                    SELECT id, nombre, descripcion, costo_puntos, activo, tipo_descuento, valor_descuento
+                    FROM premios
+                    WHERE id = ?
+                    LIMIT 1
+                `,
+                [rewardId]
+            );
+
+            if (rewardRows.length === 0) {
+                throw new Error('Premio seleccionado no encontrado');
+            }
+
+            rewardRecord = rewardRows[0];
+            if (Number(rewardRecord.activo) !== 1) {
+                throw new Error('El premio seleccionado no está disponible');
+            }
+
+            rewardCost = Number(rewardRecord.costo_puntos || 0);
+            if (!Number.isFinite(rewardCost) || rewardCost <= 0) {
+                throw new Error('El premio seleccionado no tiene un costo válido');
+            }
+
+            if (resolvedClient.puntosAcumulados < rewardCost) {
+                throw new Error('Saldo insuficiente para canjear este premio');
+            }
+
+            const totalValue = Number(total);
+            const discountValue = Number(rewardRecord.valor_descuento || 0);
+            if (rewardRecord.tipo_descuento === 'PORCENTAJE') {
+                discountAmount = Number(((totalValue * discountValue) / 100).toFixed(2));
+            } else {
+                discountAmount = Number(discountValue.toFixed(2));
+            }
+
+            if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+                discountAmount = 0;
+            }
+
+            if (discountAmount > totalValue) {
+                discountAmount = totalValue;
+            }
+
+            couponCode = buildCouponCode();
+            rewardInvoice = {
+                rewardId: rewardRecord.id,
+                rewardLabel: String(rewardRecord.nombre || '').trim(),
+                couponCode
+            };
+        }
+
+        const totalNormal = total;
+        const finalTotal = Number(Math.max(0, totalNormal - discountAmount).toFixed(2));
 
         const insertColumns = [];
         const insertValues = [];
@@ -632,9 +705,15 @@ exports.create = async (data) => {
             params.push(codigoCliente);
         }
 
-        insertColumns.push('fecha', 'total', 'estado', 'vendedor');
-        insertValues.push('NOW()', '?', '?', '?');
-        params.push(total, estado, data.vendedor.trim());
+        insertColumns.push('fecha', 'total', 'estado', 'vendedor', 'total_normal', 'descuento_aplicado');
+        insertValues.push('NOW()', '?', '?', '?', '?', '?');
+        params.push(finalTotal, estado, data.vendedor.trim(), totalNormal, discountAmount);
+
+        if (rewardRecord) {
+            insertColumns.push('premio_id', 'codigo_cupon');
+            insertValues.push('?', '?');
+            params.push(rewardRecord.id, couponCode);
+        }
 
         const sql = `
             INSERT INTO ventas (${insertColumns.join(', ')})
@@ -643,31 +722,44 @@ exports.create = async (data) => {
 
         const [result] = await connection.execute(sql, params);
 
+        if (rewardRecord) {
+            await connection.execute(
+                `
+                    INSERT INTO canjes_premios (
+                        cliente_id,
+                        codigo_cliente,
+                        premio_id,
+                        factura_id,
+                        puntos_canjeados,
+                        codigo_cupon,
+                        estado,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 'GENERADO', NOW())
+                `,
+                [
+                    resolvedClient.clienteId ?? null,
+                    codigoCliente,
+                    rewardRecord.id,
+                    result.insertId,
+                    rewardCost,
+                    couponCode
+                ]
+            );
+        }
+
         const puntosObtenidos = estado.toUpperCase() === 'CONFIRMADA'
-            ? calculateEarnedPoints(total, loyaltyConfig)
+            ? calculateEarnedPoints(finalTotal, loyaltyConfig)
             : 0;
 
         let puntosActuales = Number(resolvedClient.puntosAcumulados || 0);
+        if (rewardRecord) {
+            puntosActuales -= rewardCost;
+        }
 
         if (estado.toUpperCase() === 'CONFIRMADA') {
             if (puntosObtenidos > 0) {
                 puntosActuales += puntosObtenidos;
-
-                await connection.execute(
-                    `
-                        UPDATE clientes
-                        SET puntos_acumulados = ?
-                        WHERE ${
-                            resolvedClient.clienteId && resolvedClient.idColumn
-                                ? `\`${resolvedClient.idColumn}\` = ?`
-                                : `\`${resolvedClient.codeColumn}\` = ?`
-                        }
-                        LIMIT 1
-                    `,
-                    resolvedClient.clienteId && resolvedClient.idColumn
-                        ? [puntosActuales, Number(resolvedClient.clienteId)]
-                        : [puntosActuales, codigoCliente]
-                );
             }
 
             await connection.execute(
@@ -690,18 +782,38 @@ exports.create = async (data) => {
                     codigoCliente,
                     result.insertId,
                     puntosObtenidos,
-                    total,
+                    finalTotal,
                     loyaltyConfig.monto_por_punto,
                     loyaltyConfig.puntos_por_bloque
                 ]
             );
         }
 
+        await connection.execute(
+            `
+                UPDATE clientes
+                SET puntos_acumulados = ?
+                WHERE ${
+                    resolvedClient.clienteId && resolvedClient.idColumn
+                        ? `\`${resolvedClient.idColumn}\` = ?`
+                        : `\`${resolvedClient.codeColumn}\` = ?`
+                }
+                LIMIT 1
+            `,
+            resolvedClient.clienteId && resolvedClient.idColumn
+                ? [puntosActuales, Number(resolvedClient.clienteId)]
+                : [puntosActuales, codigoCliente]
+        );
+
         await connection.commit();
 
         return {
             message: 'Venta creada correctamente',
             id: result.insertId,
+            total_normal: totalNormal,
+            descuento_aplicado: discountAmount,
+            total: finalTotal,
+            reward: rewardInvoice,
             loyalty: {
                 puntos_obtenidos: puntosObtenidos,
                 puntos_acumulados: puntosActuales,
@@ -717,6 +829,7 @@ exports.create = async (data) => {
         connection.release();
     }
 };
+
 
 exports.getVendedores = async () => {
     const hasVendedor = await hasColumn('ventas', 'vendedor');
