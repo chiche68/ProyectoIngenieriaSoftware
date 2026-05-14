@@ -195,7 +195,41 @@ exports.getClients = async () => {
             : `SELECT '' AS codigo_cliente WHERE 1 = 0`;
 
     const [rows] = await db.execute(sql);
-    return rows;
+    // Ensure vendors with zero sales are included: merge with full vendor list
+    let allVendors = [];
+    try {
+        const vendorsList = await exports.getVendedores();
+        allVendors = (vendorsList || []).map((v) => String(v.vendedor || '').trim()).filter(Boolean);
+    } catch (err) {
+        allVendors = [];
+    }
+
+    const salesMap = new Map((rows || []).map((r) => [String(r.vendedor), r]));
+
+    const merged = (allVendors.length > 0 ? allVendors : Array.from(new Set((rows || []).map(r => String(r.vendedor))))).map((vendorName) => {
+        const r = salesMap.get(vendorName) || {};
+        return {
+            vendedor: vendorName,
+            total_ventas: Number(r.total_ventas || 0),
+            cantidad_ventas: Number(r.cantidad_ventas || 0),
+            promedio_venta: r.promedio_venta === null || r.promedio_venta === undefined ? null : Number(r.promedio_venta)
+        };
+    });
+
+    // If no explicit vendor list, also include any vendors found in rows
+    if (merged.length === 0 && rows && rows.length > 0) {
+        merged.push(...rows.map((r) => ({
+            vendedor: r.vendedor,
+            total_ventas: Number(r.total_ventas || 0),
+            cantidad_ventas: Number(r.cantidad_ventas || 0),
+            promedio_venta: r.promedio_venta === null || r.promedio_venta === undefined ? null : Number(r.promedio_venta)
+        })));
+    }
+
+    // Sort by total desc
+    merged.sort((a, b) => Number(b.total_ventas || 0) - Number(a.total_ventas || 0));
+
+    return merged;
 };
 
 function findColumn(columns, candidates) {
