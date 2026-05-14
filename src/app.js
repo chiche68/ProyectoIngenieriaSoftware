@@ -7,22 +7,62 @@ const app = express();
 
 initializeAuth().catch((error) => {
   console.error('Error inicializando autenticación:', error.message);
+  console.error('Stack trace:', error.stack);
+  // No salir del proceso, continuar con la inicialización
 });
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://127.0.0.1:5500',  // Frontend local
+    'http://localhost:5500',   // Frontend local alternativo
+    'https://proyectoingenieriasoftware-production.up.railway.app', // Railway correcto
+    '*' // Permitir cualquier origen en desarrollo
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 app.use(express.json());
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+// Middleware de logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.headers.origin || 'unknown'}`);
+  next();
 });
 
-// Ruta de verificación
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'API ERP Ventas funcionando correctamente',
-    endpoints: [
-      '/api/auth/login',
-      '/api/users',
+app.get('/health', async (req, res) => {
+  try {
+    const db = require('./config/database');
+    // Verificar conexión a la base de datos
+    await db.execute('SELECT 1');
+    res.status(200).json({
+      status: 'healthy',
+      database: 'connected',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    console.error('Database health check failed:', error.message);
+    res.status(503).json({
+      status: 'unhealthy',
+      database: 'disconnected',
+      error: error.message,
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      uptime: process.uptime()
+    });
+  }
+});
+
+app.get('/test', (req, res) => {
+  res.json({
+    message: 'API test endpoint working',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
       '/api/tickets',
       '/api/interactions',
       '/api/sales',
