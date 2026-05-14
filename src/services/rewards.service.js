@@ -30,6 +30,34 @@ async function getTableColumns(tableName, executor = db) {
     return rows.map((row) => row.COLUMN_NAME);
 }
 
+async function hasColumn(tableName, columnName, executor = db) {
+    const sql = `
+        SELECT 1
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+        LIMIT 1
+    `;
+
+    const [rows] = await executor.execute(sql, [tableName, columnName]);
+    return rows.length > 0;
+}
+
+async function hasIndex(tableName, indexName, executor = db) {
+    const sql = `
+        SELECT 1
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND INDEX_NAME = ?
+        LIMIT 1
+    `;
+
+    const [rows] = await executor.execute(sql, [tableName, indexName]);
+    return rows.length > 0;
+}
+
 function findColumn(columns, candidates) {
     return columns.find((column) => candidates.includes(column));
 }
@@ -246,10 +274,21 @@ async function ensureRewardsInfrastructure(executor = db) {
 }
 
 async function ensureRewardColumns(executor = db) {
-    await executor.query(`ALTER TABLE premios ADD COLUMN IF NOT EXISTS tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'MONTO'`);
-    await executor.query(`ALTER TABLE premios ADD COLUMN IF NOT EXISTS valor_descuento DECIMAL(10,2) NOT NULL DEFAULT 0`);
-    await executor.query(`ALTER TABLE canjes_premios ADD COLUMN IF NOT EXISTS factura_id INT NULL`);
-    await executor.query(`ALTER TABLE canjes_premios ADD INDEX IF NOT EXISTS idx_canjes_factura_id (factura_id)`);
+    if (!(await hasColumn('premios', 'tipo_descuento', executor))) {
+        await executor.query(`ALTER TABLE premios ADD COLUMN tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'MONTO'`);
+    }
+
+    if (!(await hasColumn('premios', 'valor_descuento', executor))) {
+        await executor.query(`ALTER TABLE premios ADD COLUMN valor_descuento DECIMAL(10,2) NOT NULL DEFAULT 0`);
+    }
+
+    if (!(await hasColumn('canjes_premios', 'factura_id', executor))) {
+        await executor.query(`ALTER TABLE canjes_premios ADD COLUMN factura_id INT NULL`);
+    }
+
+    if (!(await hasIndex('canjes_premios', 'idx_canjes_factura_id', executor))) {
+        await executor.query(`ALTER TABLE canjes_premios ADD INDEX idx_canjes_factura_id (factura_id)`);
+    }
 }
 
 function buildCouponCode() {

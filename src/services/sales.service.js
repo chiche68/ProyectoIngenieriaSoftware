@@ -43,12 +43,40 @@ async function hasColumn(tableName, columnName, executor = db) {
     return rows.length > 0;
 }
 
+async function hasIndex(tableName, indexName, executor = db) {
+    const sql = `
+        SELECT 1
+        FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND INDEX_NAME = ?
+        LIMIT 1
+    `;
+
+    const [rows] = await executor.execute(sql, [tableName, indexName]);
+    return rows.length > 0;
+}
+
 async function ensureSalesRewardColumns(executor = db) {
-    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS total_normal DECIMAL(10,2) NOT NULL DEFAULT 0`);
-    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS descuento_aplicado DECIMAL(10,2) NOT NULL DEFAULT 0`);
-    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS premio_id INT NULL`);
-    await executor.query(`ALTER TABLE ventas ADD COLUMN IF NOT EXISTS codigo_cupon VARCHAR(40) NULL`);
-    await executor.query(`ALTER TABLE ventas ADD INDEX IF NOT EXISTS idx_ventas_premio_id (premio_id)`);
+    if (!(await hasColumn('ventas', 'total_normal', executor))) {
+        await executor.query(`ALTER TABLE ventas ADD COLUMN total_normal DECIMAL(10,2) NOT NULL DEFAULT 0`);
+    }
+
+    if (!(await hasColumn('ventas', 'descuento_aplicado', executor))) {
+        await executor.query(`ALTER TABLE ventas ADD COLUMN descuento_aplicado DECIMAL(10,2) NOT NULL DEFAULT 0`);
+    }
+
+    if (!(await hasColumn('ventas', 'premio_id', executor))) {
+        await executor.query(`ALTER TABLE ventas ADD COLUMN premio_id INT NULL`);
+    }
+
+    if (!(await hasColumn('ventas', 'codigo_cupon', executor))) {
+        await executor.query(`ALTER TABLE ventas ADD COLUMN codigo_cupon VARCHAR(40) NULL`);
+    }
+
+    if (!(await hasIndex('ventas', 'idx_ventas_premio_id', executor))) {
+        await executor.query(`ALTER TABLE ventas ADD INDEX idx_ventas_premio_id (premio_id)`);
+    }
 }
 
 exports.getClients = async () => {
