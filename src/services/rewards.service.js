@@ -108,20 +108,87 @@ async function seedDefaultRewards(executor = db) {
         return;
     }
 
+    const defaultRewards = [
+        {
+            nombre: 'Descuento 3%',
+            descripcion: 'Aplica 3% de descuento en la próxima venta.',
+            costo_puntos: 50
+        },
+        {
+            nombre: 'Descuento 10%',
+            descripcion: 'Aplica 10% de descuento en la próxima venta.',
+            costo_puntos: 100
+        },
+        {
+            nombre: 'Descuento 25%',
+            descripcion: 'Aplica 25% de descuento en la próxima venta.',
+            costo_puntos: 250
+        },
+        {
+            nombre: 'Descuento 50%',
+            descripcion: 'Aplica 50% de descuento en la próxima venta.',
+            costo_puntos: 500
+        }
+    ];
+
     const [countRows] = await executor.execute('SELECT COUNT(*) AS total FROM premios');
     const total = Number(countRows?.[0]?.total || 0);
-    if (total > 0) {
+    if (total === 0) {
+        const values = defaultRewards
+            .map(() => '(?, ?, ?, 1)')
+            .join(',\n                ');
+
+        const params = defaultRewards.flatMap((reward) => [
+            reward.nombre,
+            reward.descripcion,
+            reward.costo_puntos
+        ]);
+
+        await executor.query(
+            `
+                INSERT INTO premios (nombre, descripcion, costo_puntos, activo)
+                VALUES
+                ${values}
+            `,
+            params
+        );
         return;
     }
 
-    await executor.query(
+    for (const reward of defaultRewards) {
+        const [rows] = await executor.execute(
+            'SELECT id FROM premios WHERE nombre = ? LIMIT 1',
+            [reward.nombre]
+        );
+
+        if (rows.length > 0) {
+            await executor.execute(
+                `
+                    UPDATE premios
+                    SET descripcion = ?, costo_puntos = ?, activo = 1
+                    WHERE id = ?
+                `,
+                [reward.descripcion, reward.costo_puntos, rows[0].id]
+            );
+        } else {
+            await executor.execute(
+                `
+                    INSERT INTO premios (nombre, descripcion, costo_puntos, activo)
+                    VALUES (?, ?, ?, 1)
+                `,
+                [reward.nombre, reward.descripcion, reward.costo_puntos]
+            );
+        }
+    }
+
+    const rewardNames = defaultRewards.map((reward) => reward.nombre);
+    await executor.execute(
         `
-            INSERT INTO premios (nombre, descripcion, costo_puntos, activo)
-            VALUES
-                ('Descuento 10%', 'Cupón aplicable a la próxima compra.', 100, 1),
-                ('Envío Gratis', 'Beneficio válido en tu siguiente despacho.', 75, 1),
-                ('Producto de Regalo', 'Selecciona un artículo participante sin costo.', 250, 1)
-        `
+            UPDATE premios
+            SET activo = 0
+            WHERE nombre NOT IN (${rewardNames.map(() => '?').join(', ')})
+        `,
+        rewardNames
     );
 }
 
@@ -184,6 +251,124 @@ exports.getRewards = async () => {
     );
 
     return rows;
+};
+
+exports.getAllRewards = async () => {
+    await ensureRewardsInfrastructure();
+
+    const [rows] = await db.execute(
+        `
+            SELECT id, nombre, descripcion, costo_puntos, activo
+            FROM premios
+            ORDER BY activo DESC, costo_puntos ASC, nombre ASC
+        `
+    );
+
+    return rows;
+};
+
+exports.createReward = async ({ nombre, descripcion, costo_puntos, activo = 1 }) => {
+    await ensureRewardsInfrastructure();
+
+    const name = String(nombre || '').trim();
+    if (!name) {
+        throw new Error('El nombre del premio es obligatorio');
+    }
+
+    const cost = Number(costo_puntos);
+    if (!Number.isInteger(cost) || cost <= 0) {
+        throw new Error('El costo en puntos debe ser un número entero mayor que 0');
+    }
+
+    const activeValue = Number(activo) === 1 ? 1 : 0;
+
+    const [result] = await db.execute(
+        `
+            INSERT INTO premios (nombre, descripcion, costo_puntos, activo)
+            VALUES (?, ?, ?, ?)
+        `,
+        [name, String(descripcion || '').trim(), cost, activeValue]
+    );
+
+    return {
+        id: result.insertId,
+        nombre: name,
+        descripcion: String(descripcion || '').trim(),
+        costo_puntos: cost,
+        activo: activeValue
+    };
+};
+
+exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, activo = 1 }) => {
+    await ensureRewardsInfrastructure();
+
+    const rewardId = Number(id);
+    if (!Number.isInteger(rewardId) || rewardId <= 0) {
+        throw new Error('El identificador del premio es inválido');
+    }
+
+    const name = String(nombre || '').trim();
+    if (!name) {
+        throw new Error('El nombre del premio es obligatorio');
+    }
+
+    const cost = Number(costo_puntos);
+    if (!Number.isInteger(cost) || cost <= 0) {
+        throw new Error('El costo en puntos debe ser un número entero mayor que 0');
+    }
+
+    const activeValue = Number(activo) === 1 ? 1 : 0;
+
+    const [existingRows] = await db.execute(
+        'SELECT id FROM premios WHERE id = ? LIMIT 1',
+        [rewardId]
+    );
+
+    if (existingRows.length === 0) {
+        throw new Error('El premio no existe');
+    }
+
+    await db.execute(
+        `
+            UPDATE premios
+            SET nombre = ?, descripcion = ?, costo_puntos = ?, activo = ?
+            WHERE id = ?
+        `,
+        [name, String(descripcion || '').trim(), cost, activeValue, rewardId]
+    );
+
+    return {
+        id: rewardId,
+        nombre: name,
+        descripcion: String(descripcion || '').trim(),
+        costo_puntos: cost,
+        activo: activeValue
+    };
+};
+
+exports.deleteReward = async ({ id }) => {
+    await ensureRewardsInfrastructure();
+
+    const rewardId = Number(id);
+    if (!Number.isInteger(rewardId) || rewardId <= 0) {
+        throw new Error('El identificador del premio es inválido');
+    }
+
+    const [existingRows] = await db.execute(
+        'SELECT id FROM premios WHERE id = ? LIMIT 1',
+        [rewardId]
+    );
+
+    if (existingRows.length === 0) {
+        throw new Error('El premio no existe');
+    }
+
+    await db.execute(
+        'UPDATE premios SET activo = 0 WHERE id = ?',
+        [rewardId]
+    );
+
+    return { message: 'Premio eliminado correctamente', id: rewardId };
 };
 
 exports.redeemReward = async ({ clientRef, rewardId }) => {

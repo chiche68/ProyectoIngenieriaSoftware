@@ -280,7 +280,9 @@ async function resolveClientForSale(data, executor = db) {
         throw new Error('No se encontró columna de identificación en clientes');
     }
 
-    const clienteId = Number(data.cliente_id);
+    const clienteId = data.cliente_id === undefined || data.cliente_id === null || data.cliente_id === ''
+        ? NaN
+        : Number(data.cliente_id);
     const codigoCliente = String(data.codigo_cliente || '').trim();
 
     let filter;
@@ -588,7 +590,9 @@ exports.create = async (data) => {
         throw new Error('El total debe ser mayor que 0');
     }
 
-    const estado = data.estado && data.estado.trim() ? data.estado.trim() : 'CONFIRMADA';
+    const estado = data.estado && data.estado.trim()
+        ? data.estado.trim().toUpperCase()
+        : 'CONFIRMADA';
     const hasCodigoCliente = await hasColumn('ventas', 'codigo_cliente');
     const hasClienteId = await hasColumn('ventas', 'cliente_id');
 
