@@ -1,4 +1,4 @@
-const db = require('../config/database');
+﻿const db = require('../config/database');
 const DEFAULT_POINTS_PER_AMOUNT = 10;
 const DEFAULT_POINTS_AWARDED = 1;
 
@@ -850,6 +850,7 @@ exports.getReport = async (period, codigoCliente, vendedor) => {
             params.push(codigoCliente);
         } else {
             throw new Error('No existe columna para filtrar cliente en tabla ventas');
+        }
         }
 
     if (vendedor) {
