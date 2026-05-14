@@ -26,7 +26,7 @@ Puedes configurar conexion con URL completa (recomendado) o por variables separa
 
 ### Variables para premios (opcional)
 
-- `REWARDS_SEED_DEFAULT` (default `true`) inserta premios demo si la tabla está vacía.
+- `REWARDS_SEED_DEFAULT` (default `false`) inserta premios demo si la tabla está vacía.
 
 Ejemplo:
 

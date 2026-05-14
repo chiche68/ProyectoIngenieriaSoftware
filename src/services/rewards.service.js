@@ -135,7 +135,7 @@ async function ensureRewardsTables(executor = db) {
 }
 
 async function seedDefaultRewards(executor = db) {
-    const shouldSeed = String(process.env.REWARDS_SEED_DEFAULT || 'true').toLowerCase() !== 'false';
+    const shouldSeed = String(process.env.REWARDS_SEED_DEFAULT || 'false').toLowerCase() !== 'false';
     if (!shouldSeed) {
         return;
     }
