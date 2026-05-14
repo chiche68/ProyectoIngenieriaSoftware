@@ -63,6 +63,47 @@ async function hasIndex(tableName, indexName, executor = db) {
     return rows.length > 0;
 }
 
+function normalizeSaleDate(value) {
+    const rawValue = String(value || '').trim();
+    if (!rawValue) {
+        return null;
+    }
+
+    const dateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateMatch) {
+        const [, yearText, monthText, dayText] = dateMatch;
+        const year = Number(yearText);
+        const month = Number(monthText);
+        const day = Number(dayText);
+        const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+
+        if (
+            Number.isNaN(parsed.getTime()) ||
+            parsed.getFullYear() !== year ||
+            parsed.getMonth() !== month - 1 ||
+            parsed.getDate() !== day
+        ) {
+            return null;
+        }
+
+        return `${yearText}-${monthText}-${dayText} 00:00:00`;
+    }
+
+    const parsed = new Date(rawValue);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const hours = String(parsed.getHours()).padStart(2, '0');
+    const minutes = String(parsed.getMinutes()).padStart(2, '0');
+    const seconds = String(parsed.getSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 async function ensureSalesRewardColumns(executor = db) {
     if (!(await hasColumn('ventas', 'total_normal', executor))) {
         await executor.query(`ALTER TABLE ventas ADD COLUMN total_normal DECIMAL(10,2) NOT NULL DEFAULT 0`);
@@ -637,12 +678,19 @@ exports.create = async (data) => {
     const estado = data.estado && data.estado.trim()
         ? data.estado.trim().toUpperCase()
         : 'CONFIRMADA';
+    const saleDate = data.fecha || data.sale_date || data.fecha_venta
+        ? normalizeSaleDate(data.fecha || data.sale_date || data.fecha_venta)
+        : null;
     const rewardId = data.reward_id ? Number(data.reward_id) : null;
     const hasCodigoCliente = await hasColumn('ventas', 'codigo_cliente');
     const hasClienteId = await hasColumn('ventas', 'cliente_id');
 
     if (hasCodigoCliente && (!data.codigo_cliente || !String(data.codigo_cliente).trim())) {
         throw new Error('El codigo_cliente es obligatorio');
+    }
+
+    if ((data.fecha || data.sale_date || data.fecha_venta) && !saleDate) {
+        throw new Error('La fecha de venta no es válida');
     }
 
     await ensureLoyaltyInfrastructure();
@@ -744,8 +792,13 @@ exports.create = async (data) => {
         }
 
         insertColumns.push('fecha', 'total', 'estado', 'vendedor', 'total_normal', 'descuento_aplicado');
-        insertValues.push('NOW()', '?', '?', '?', '?', '?');
-        params.push(finalTotal, estado, data.vendedor.trim(), totalNormal, discountAmount);
+        if (saleDate) {
+            insertValues.push('?', '?', '?', '?', '?', '?');
+            params.push(saleDate, finalTotal, estado, data.vendedor.trim(), totalNormal, discountAmount);
+        } else {
+            insertValues.push('NOW()', '?', '?', '?', '?', '?');
+            params.push(finalTotal, estado, data.vendedor.trim(), totalNormal, discountAmount);
+        }
 
         if (rewardRecord) {
             insertColumns.push('premio_id', 'codigo_cupon');
