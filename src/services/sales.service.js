@@ -3,6 +3,12 @@ const db = require('../config/database');
 const DEFAULT_POINTS_PER_AMOUNT = 10;
 const DEFAULT_POINTS_AWARDED = 1;
 
+function buildCouponCode() {
+    const timestampPart = Date.now().toString(36).toUpperCase();
+    const randomPart = crypto.randomBytes(4).toString('hex').toUpperCase();
+    return `CUP-${timestampPart}-${randomPart}`.slice(0, 40);
+}
+
 
 async function hasTable(tableName, executor = db) {
     const sql = `
