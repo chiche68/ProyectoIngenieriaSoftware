@@ -24,6 +24,10 @@ Puedes configurar conexion con URL completa (recomendado) o por variables separa
 - `SEED_IT_EMAIL` (default `it@erp.local`)
 - `SEED_IT_PASSWORD` (default `ItAdmin123!`)
 
+### Variables para premios (opcional)
+
+- `REWARDS_SEED_DEFAULT` (default `true`) inserta premios demo si la tabla está vacía.
+
 Ejemplo:
 
 ```env
@@ -91,6 +95,12 @@ Regla inicial de fidelizacion:
 - se genera un log `PUNTOS_OBTENIDOS` vinculado al `factura_id` de la venta
 
 Las contrasenas se almacenan con hash `bcrypt` en tabla `usuarios`.
+
+Premios y canjes:
+
+- `GET /api/rewards` lista recompensas disponibles (requiere rol `gerente` o `vendedor`)
+- `POST /api/rewards/redeem` canjea puntos y genera cupón
+   - body: `{ "clientRef": "CLI-0001", "rewardId": 1 }`
 
 ## Deploy en Railway
 

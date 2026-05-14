@@ -173,3 +173,37 @@ CREATE TABLE IF NOT EXISTS interacciones_cliente (
     ON UPDATE RESTRICT
     ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ==========================================================
+-- 8) Premios / Canje de puntos
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS premios (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(150) NOT NULL,
+  descripcion TEXT NULL,
+  costo_puntos INT NOT NULL,
+  activo TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_premios_activo (activo),
+  KEY idx_premios_costo (costo_puntos)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS canjes_premios (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cliente_id INT NULL,
+  codigo_cliente VARCHAR(100) NULL,
+  premio_id INT NOT NULL,
+  puntos_canjeados INT NOT NULL,
+  codigo_cupon VARCHAR(40) NOT NULL,
+  estado VARCHAR(30) NOT NULL DEFAULT 'GENERADO',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_canjes_codigo_cupon (codigo_cupon),
+  KEY idx_canjes_cliente_id (cliente_id),
+  KEY idx_canjes_codigo_cliente (codigo_cliente),
+  KEY idx_canjes_premio_id (premio_id),
+  CONSTRAINT fk_canjes_premio
+    FOREIGN KEY (premio_id) REFERENCES premios(id)
+    ON UPDATE RESTRICT
+    ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

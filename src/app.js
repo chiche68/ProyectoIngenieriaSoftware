@@ -29,7 +29,8 @@ app.get('/', (req, res) => {
       '/api/sales/loyalty/config',
       '/api/sales/clients/search',
       '/api/sales/clients/:clientRef',
-      '/api/opportunities'
+      '/api/opportunities',
+      '/api/rewards'
     ]
   });
 });
@@ -52,5 +53,8 @@ app.use('/api/sales', authenticate, authorizeRoles('gerente', 'vendedor'), sales
 
 const opportunityRoutes = require('./routes/opportunity.routes');
 app.use('/api/opportunities', authenticate, authorizeRoles('gerente', 'vendedor'), opportunityRoutes);
+
+const rewardsRoutes = require('./routes/rewards.routes');
+app.use('/api/rewards', authenticate, authorizeRoles('gerente', 'vendedor'), rewardsRoutes);
 
 module.exports = app;
