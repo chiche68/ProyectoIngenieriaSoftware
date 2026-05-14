@@ -192,8 +192,41 @@ async function seedDefaultRewards(executor = db) {
     );
 }
 
+async function cleanupDeprecatedRewards(executor = db) {
+    const deprecatedNames = [
+        'Envío gratis',
+        'Envio gratis',
+        'Productos de regalo',
+        'Producto de regalo'
+    ];
+
+    const placeholders = deprecatedNames.map(() => '?').join(', ');
+
+    await executor.execute(
+        `
+            DELETE p
+            FROM premios p
+            LEFT JOIN canjes_premios c ON c.premio_id = p.id
+            WHERE p.nombre IN (${placeholders})
+              AND c.id IS NULL
+        `,
+        deprecatedNames
+    );
+
+    await executor.execute(
+        `
+            UPDATE premios p
+            JOIN canjes_premios c ON c.premio_id = p.id
+            SET p.activo = 0
+            WHERE p.nombre IN (${placeholders})
+        `,
+        deprecatedNames
+    );
+}
+
 async function ensureRewardsInfrastructure(executor = db) {
     await ensureRewardsTables(executor);
+    await cleanupDeprecatedRewards(executor);
     await seedDefaultRewards(executor);
 }
 
@@ -363,10 +396,25 @@ exports.deleteReward = async ({ id }) => {
         throw new Error('El premio no existe');
     }
 
-    await db.execute(
-        'UPDATE premios SET activo = 0 WHERE id = ?',
+    const [canjeRows] = await db.execute(
+        'SELECT COUNT(*) AS total FROM canjes_premios WHERE premio_id = ?',
         [rewardId]
     );
+    const totalCanjes = Number(canjeRows?.[0]?.total || 0);
+
+    if (totalCanjes > 0) {
+        await db.execute(
+            'UPDATE premios SET activo = 0 WHERE id = ?',
+            [rewardId]
+        );
+
+        return {
+            message: 'El premio tiene canjes previos y se ha desactivado correctamente',
+            id: rewardId
+        };
+    }
+
+    await db.execute('DELETE FROM premios WHERE id = ?', [rewardId]);
 
     return { message: 'Premio eliminado correctamente', id: rewardId };
 };
