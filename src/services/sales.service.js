@@ -1128,6 +1128,12 @@ function addUtcMonths(date, months) {
     return d;
 }
 
+function addLocalMonths(date, months) {
+    const d = new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0);
+    d.setMonth(d.getMonth() + months);
+    return d;
+}
+
 function getUtcMonthStart(month) {
     const [year, mon] = String(month).split('-').map((part) => Number(part));
     return new Date(Date.UTC(year, mon - 1, 1, 0, 0, 0));
@@ -1140,19 +1146,37 @@ function getCurrentMonthStringUtc() {
     return `${year}-${mon}`;
 }
 
+// Local-time helpers: use server local timezone to compute month boundaries
+function formatMysqlDateLocal(date) {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function getLocalMonthStart(month) {
+    const [year, mon] = String(month).split('-').map((part) => Number(part));
+    return new Date(year, mon - 1, 1, 0, 0, 0);
+}
+
+function getCurrentMonthStringLocal() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const mon = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${mon}`;
+}
+
 exports.getSalesKpis = async ({ month, vendedor } = {}) => {
-    const targetMonth = isValidMonth(month) ? String(month).trim() : getCurrentMonthStringUtc();
+    const targetMonth = isValidMonth(month) ? String(month).trim() : getCurrentMonthStringLocal();
     const vendorFilter = String(vendedor || '').trim();
 
-    const monthStart = getUtcMonthStart(targetMonth);
-    const nextMonthStart = addUtcMonths(monthStart, 1);
-    const prevMonthStart = addUtcMonths(monthStart, -1);
+    const monthStart = getLocalMonthStart(targetMonth);
+    const nextMonthStart = addLocalMonths(monthStart, 1);
+    const prevMonthStart = addLocalMonths(monthStart, -1);
 
-    const monthStartSql = formatMysqlDateUtc(monthStart);
-    const nextMonthStartSql = formatMysqlDateUtc(nextMonthStart);
-    const prevMonthStartSql = formatMysqlDateUtc(prevMonthStart);
+    const monthStartSql = formatMysqlDateLocal(monthStart);
+    const nextMonthStartSql = formatMysqlDateLocal(nextMonthStart);
+    const prevMonthStartSql = formatMysqlDateLocal(prevMonthStart);
 
-    const prevMonthString = `${prevMonthStart.getUTCFullYear()}-${String(prevMonthStart.getUTCMonth() + 1).padStart(2, '0')}`;
+    const prevMonthString = `${prevMonthStart.getFullYear()}-${String(prevMonthStart.getMonth() + 1).padStart(2, '0')}`;
 
     const selectParams = [
         monthStartSql,
