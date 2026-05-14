@@ -693,8 +693,12 @@ exports.create = async (data) => {
             }
 
             const totalValue = Number(total);
-            const discountValue = Number(rewardRecord.valor_descuento || 0);
+            let discountValue = Number(rewardRecord.valor_descuento || 0);
             if (rewardRecord.tipo_descuento === 'PORCENTAJE') {
+                if (discountValue > 0 && discountValue <= 1) {
+                    // Si se guardó como fracción (0.05), normalizamos a porcentaje real (5)
+                    discountValue = discountValue * 100;
+                }
                 discountAmount = Number(((totalValue * discountValue) / 100).toFixed(2));
             } else {
                 discountAmount = Number(discountValue.toFixed(2));
