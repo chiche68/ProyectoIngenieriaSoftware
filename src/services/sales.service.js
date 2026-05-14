@@ -1048,7 +1048,7 @@ exports.getVendedoresRendimiento = async (period) => {
             COUNT(*) as cantidad_ventas,
             AVG(total) as promedio_venta
         FROM ventas
-        WHERE estado = 'CONFIRMADA'
+                WHERE UPPER(TRIM(estado)) = 'CONFIRMADA'
           AND vendedor IS NOT NULL
           AND vendedor <> ''
           ${dateFilter}

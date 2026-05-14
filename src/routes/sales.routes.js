@@ -16,6 +16,6 @@ router.get('/vendedores/rendimiento', authorizeRoles('gerente'), controller.getV
 router.get('/kpis', authorizeRoles('gerente'), controller.getSalesKpis);
 router.get('/report', authorizeRoles('gerente', 'vendedor', 'externo'), controller.getSalesReport);
 router.get('/by-seller', authorizeRoles('gerente', 'vendedor'), controller.getSalesBySeller);
-router.post('/', authorizeRoles('gerente', 'vendedor'), controller.createSale);
+router.post('/', authorizeRoles('vendedor'), controller.createSale);
 
 module.exports = router;
