@@ -885,7 +885,7 @@ exports.getReport = async (period, codigoCliente, vendedor) => {
                 vendedor,
                 codigo_cliente,
                 cliente_id,
-                created_at
+                fecha AS created_at
             FROM ventas
             WHERE estado = 'CONFIRMADA'
         `;
