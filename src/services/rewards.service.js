@@ -101,7 +101,7 @@ async function ensureRewardsTables(executor = db) {
             descripcion TEXT NULL,
             costo_puntos INT NOT NULL,
             activo TINYINT(1) NOT NULL DEFAULT 1,
-            tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'MONTO',
+            tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'PORCENTAJE',
             valor_descuento DECIMAL(10,2) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -275,7 +275,7 @@ async function ensureRewardsInfrastructure(executor = db) {
 
 async function ensureRewardColumns(executor = db) {
     if (!(await hasColumn('premios', 'tipo_descuento', executor))) {
-        await executor.query(`ALTER TABLE premios ADD COLUMN tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'MONTO'`);
+        await executor.query(`ALTER TABLE premios ADD COLUMN tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'PORCENTAJE'`);
     }
 
     if (!(await hasColumn('premios', 'valor_descuento', executor))) {
@@ -361,7 +361,7 @@ exports.getAllRewards = async () => {
     return rows;
 };
 
-exports.createReward = async ({ nombre, descripcion, costo_puntos, tipo_descuento = 'MONTO', valor_descuento = 0, activo = 1 }) => {
+exports.createReward = async ({ nombre, descripcion, costo_puntos, tipo_descuento = 'PORCENTAJE', valor_descuento = 0, activo = 1 }) => {
     await ensureRewardsInfrastructure();
 
     const name = String(nombre || '').trim();
@@ -374,7 +374,7 @@ exports.createReward = async ({ nombre, descripcion, costo_puntos, tipo_descuent
         throw new Error('El costo en puntos debe ser un número entero mayor que 0');
     }
 
-    const discountType = String(tipo_descuento || 'MONTO').toUpperCase();
+    const discountType = String(tipo_descuento || 'PORCENTAJE').toUpperCase();
     if (discountType !== 'MONTO' && discountType !== 'PORCENTAJE') {
         throw new Error('El tipo de descuento no es válido');
     }
@@ -409,7 +409,7 @@ exports.createReward = async ({ nombre, descripcion, costo_puntos, tipo_descuent
     };
 };
 
-exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, tipo_descuento = 'MONTO', valor_descuento = 0, activo = 1 }) => {
+exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, tipo_descuento = 'PORCENTAJE', valor_descuento = 0, activo = 1 }) => {
     await ensureRewardsInfrastructure();
 
     const rewardId = Number(id);
@@ -427,7 +427,7 @@ exports.updateReward = async ({ id, nombre, descripcion, costo_puntos, tipo_desc
         throw new Error('El costo en puntos debe ser un número entero mayor que 0');
     }
 
-    const discountType = String(tipo_descuento || 'MONTO').toUpperCase();
+    const discountType = String(tipo_descuento || 'PORCENTAJE').toUpperCase();
     if (discountType !== 'MONTO' && discountType !== 'PORCENTAJE') {
         throw new Error('El tipo de descuento no es válido');
     }
