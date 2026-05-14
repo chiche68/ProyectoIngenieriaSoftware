@@ -55,14 +55,9 @@ app.get('/health', async (req, res) => {
   }
 });
 
-app.get('/test', (req, res) => {
+app.get('/', (req, res) => {
   res.json({
-    message: 'API test endpoint working',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
+    endpoints: [
       '/api/tickets',
       '/api/interactions',
       '/api/sales',
@@ -73,6 +68,14 @@ app.get('/test', (req, res) => {
       '/api/opportunities',
       '/api/rewards'
     ]
+  });
+});
+
+app.get('/test', (req, res) => {
+  res.json({
+    message: 'API test endpoint working',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
