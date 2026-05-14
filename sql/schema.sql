@@ -174,6 +174,8 @@ CREATE TABLE IF NOT EXISTS premios (
   activo TINYINT(1) NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  tipo_descuento ENUM('MONTO', 'PORCENTAJE') NOT NULL DEFAULT 'MONTO',
+  valor_descuento DECIMAL(10,2) NOT NULL DEFAULT 0,
   KEY idx_premios_activo (activo),
   KEY idx_premios_costo (costo_puntos)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -183,6 +185,7 @@ CREATE TABLE IF NOT EXISTS canjes_premios (
   cliente_id INT NULL,
   codigo_cliente VARCHAR(100) NULL,
   premio_id INT NOT NULL,
+  factura_id INT NULL,
   puntos_canjeados INT NOT NULL,
   codigo_cupon VARCHAR(40) NOT NULL,
   estado VARCHAR(30) NOT NULL DEFAULT 'GENERADO',
@@ -191,8 +194,16 @@ CREATE TABLE IF NOT EXISTS canjes_premios (
   KEY idx_canjes_cliente_id (cliente_id),
   KEY idx_canjes_codigo_cliente (codigo_cliente),
   KEY idx_canjes_premio_id (premio_id),
+  KEY idx_canjes_factura_id (factura_id),
   CONSTRAINT fk_canjes_premio
     FOREIGN KEY (premio_id) REFERENCES premios(id)
     ON UPDATE RESTRICT
     ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+ALTER TABLE canjes_premios
+  ADD CONSTRAINT fk_canjes_factura
+    FOREIGN KEY (factura_id) REFERENCES ventas(id)
+    ON UPDATE RESTRICT
+    ON DELETE SET NULL;
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
