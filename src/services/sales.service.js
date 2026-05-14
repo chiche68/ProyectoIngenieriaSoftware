@@ -959,6 +959,20 @@ exports.getVendedores = async () => {
         });
     }
 
+    // If the `usuarios` table exists, restrict the vendor list to users with rol='vendedor'.
+    const hasUsuarios = await hasTable('usuarios');
+    if (hasUsuarios) {
+        const [userRows] = await db.execute(`SELECT nombre, correo, rol FROM usuarios WHERE rol = 'vendedor' AND activo = 1`);
+        const allowed = new Set((userRows || []).flatMap((u) => [String(u.nombre || '').trim(), String(u.correo || '').trim()]).filter(Boolean));
+
+        // Intersect vendors with allowed set
+        const filtered = Array.from(vendors).filter((v) => allowed.has(v));
+
+        return filtered
+            .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+            .map((v) => ({ vendedor: v }));
+    }
+
     return Array.from(vendors)
         .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
         .map((v) => ({ vendedor: v }));
@@ -1088,6 +1102,10 @@ exports.getVendedoresRendimiento = async (period) => {
         case 'month':
             dateFilter = "AND DATE_FORMAT(fecha, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')";
             groupBy = "DATE_FORMAT(fecha, '%Y-%m')";
+            break;
+        case 'year':
+            dateFilter = "AND DATE_FORMAT(fecha, '%Y') = DATE_FORMAT(CURDATE(), '%Y')";
+            groupBy = "DATE_FORMAT(fecha, '%Y')";
             break;
         default:
             groupBy = "DATE_FORMAT(fecha, '%Y-%m')";
