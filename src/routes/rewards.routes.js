@@ -8,6 +8,6 @@ router.get('/', authorizeRoles('gerente', 'vendedor'), controller.getRewards);
 router.post('/', authorizeRoles('gerente'), controller.createReward);
 router.put('/:id', authorizeRoles('gerente'), controller.updateReward);
 router.delete('/:id', authorizeRoles('gerente'), controller.deleteReward);
-router.post('/redeem', controller.redeemReward);
+router.post('/redeem', authorizeRoles('gerente', 'vendedor'), controller.redeemReward);
 
 module.exports = router;

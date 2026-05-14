@@ -54,6 +54,23 @@ exports.getSalesKpis = async (req, res) => {
     }
 };
 
+exports.getSalesBySeller = async (req, res) => {
+    try {
+        const { vendedor } = req.query;
+        const limit = req.query.limit ? parseInt(req.query.limit) : 100;
+
+        // Un vendedor solo puede consultar sus propias ventas.
+        const actualVendedor = req.user?.rol === 'vendedor'
+            ? (req.user.nombre || req.user.correo)
+            : vendedor;
+
+        const data = await service.getSalesBySeller(actualVendedor, limit);
+        res.json(data);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
 exports.createSale = async (req, res) => {
     try {
         const payload = { ...req.body };

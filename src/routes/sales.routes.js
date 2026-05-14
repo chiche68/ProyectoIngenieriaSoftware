@@ -14,7 +14,8 @@ router.put('/loyalty/config', authorizeRoles('gerente'), controller.updateLoyalt
 router.get('/vendedores', authorizeRoles('gerente'), controller.getSalesVendedores);
 router.get('/vendedores/rendimiento', authorizeRoles('gerente'), controller.getVendedoresRendimiento);
 router.get('/kpis', authorizeRoles('gerente'), controller.getSalesKpis);
-router.get('/report', authorizeRoles('gerente', 'vendedor'), controller.getSalesReport);
+router.get('/report', authorizeRoles('gerente', 'vendedor', 'externo'), controller.getSalesReport);
+router.get('/by-seller', authorizeRoles('gerente', 'vendedor'), controller.getSalesBySeller);
 router.post('/', authorizeRoles('gerente', 'vendedor'), controller.createSale);
 
 module.exports = router;

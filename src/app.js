@@ -50,7 +50,7 @@ const interactionRoutes = require('./routes/interaction.routes');
 app.use('/api/interactions', authenticate, authorizeRoles('gerente', 'vendedor'), interactionRoutes);
 
 const salesRoutes = require('./routes/sales.routes');
-app.use('/api/sales', authenticate, authorizeRoles('gerente', 'vendedor'), salesRoutes);
+app.use('/api/sales', authenticate, salesRoutes);
 
 const opportunityRoutes = require('./routes/opportunity.routes');
 app.use('/api/opportunities', authenticate, authorizeRoles('gerente', 'vendedor'), opportunityRoutes);

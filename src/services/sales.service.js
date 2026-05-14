@@ -760,21 +760,72 @@ exports.getVendedores = async () => {
 };
 
 exports.getReport = async (period, codigoCliente, vendedor) => {
+    // Si no se especifica período, devolver todas las ventas individuales
+    if (!period) {
+        let sql = `
+            SELECT
+                id,
+                fecha,
+                total,
+                estado,
+                vendedor,
+                codigo_cliente,
+                cliente_id,
+                created_at
+            FROM ventas
+            WHERE estado = 'CONFIRMADA'
+        `;
 
+        const params = [];
+
+        if (codigoCliente) {
+            const hasCodigoCliente = await hasColumn('ventas', 'codigo_cliente');
+            const hasClienteId = await hasColumn('ventas', 'cliente_id');
+
+            if (hasCodigoCliente) {
+                sql += " AND codigo_cliente = ?";
+                params.push(codigoCliente);
+            } else if (hasClienteId) {
+                sql += " AND CAST(cliente_id AS CHAR) = ?";
+                params.push(codigoCliente);
+            } else {
+                throw new Error('No existe columna para filtrar cliente en tabla ventas');
+            }
+        }
+
+        if (vendedor) {
+            sql += " AND vendedor = ?";
+            params.push(vendedor);
+        }
+
+        sql += " ORDER BY fecha DESC";
+
+        const [rows] = await db.execute(sql, params);
+        return rows;
+    }
+
+    // Código existente para reportes agrupados por período
     let groupBy;
 
     switch (period) {
         case 'day':
+        case 'daily':
             groupBy = "DATE(fecha)";
             break;
         case 'week':
+        case 'weekly':
             groupBy = "YEARWEEK(fecha, 1)";
             break;
         case 'month':
+        case 'monthly':
             groupBy = "DATE_FORMAT(fecha, '%Y-%m')";
             break;
+        case 'year':
+        case 'yearly':
+            groupBy = "YEAR(fecha)";
+            break;
         default:
-            throw new Error("Periodo inválido. Use day, week o month");
+            throw new Error("Periodo inválido. Use daily, weekly, monthly, yearly o deje vacío para todas las ventas individuales");
     }
 
     let sql = `
@@ -800,7 +851,6 @@ exports.getReport = async (period, codigoCliente, vendedor) => {
         } else {
             throw new Error('No existe columna para filtrar cliente en tabla ventas');
         }
-    }
 
     if (vendedor) {
         sql += " AND vendedor = ?";
@@ -1196,4 +1246,31 @@ exports.deleteClient = async (clientRef) => {
         }
         throw error;
     }
+};
+
+exports.getSalesBySeller = async (vendedor, limit = 100) => {
+    if (!vendedor || !vendedor.trim()) {
+        throw new Error('El vendedor es obligatorio');
+    }
+
+    const maxLimit = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 1000) : 100;
+
+    const sql = `
+        SELECT
+            id,
+            fecha,
+            total,
+            estado,
+            vendedor,
+            codigo_cliente,
+            cliente_id
+        FROM ventas
+        WHERE vendedor = ?
+          AND estado = 'CONFIRMADA'
+        ORDER BY fecha DESC
+        LIMIT ${maxLimit}
+    `;
+
+    const [rows] = await db.execute(sql, [vendedor.trim()]);
+    return rows;
 };
