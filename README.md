@@ -88,6 +88,12 @@ Ventas y fidelizacion:
 - `GET /api/sales/loyalty/config` consultar regla de puntos (solo `gerente`)
 - `PUT /api/sales/loyalty/config` actualizar regla de puntos (solo `gerente`)
 
+KPIs de ventas (solo `gerente`):
+
+- `GET /api/sales/kpis?month=YYYY-MM` tabla resumen por vendedor
+- `GET /api/sales/kpis?month=YYYY-MM&vendedor=Nombre` vista por vendedor individual
+- Incluye comparativa porcentual vs mes anterior y tasa de conversión (si existe `oportunidades_negocio`).
+
 Regla inicial de fidelizacion:
 
 - 1 punto por cada $10 de compra

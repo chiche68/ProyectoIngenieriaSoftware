@@ -1,14 +1,3 @@
--- ==========================================================
--- ERP Ventas - Script de creación de tablas (MySQL 8+)
--- Fecha: 2026-05-01
---
--- Notas:
--- - Cambia el nombre de la BD `erp_ventas` si ya usas otra.
--- - Este esquema está alineado con las consultas en:
---   backend/src/services/*.js
--- ==========================================================
-
--- Recomendado para consistencia
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 

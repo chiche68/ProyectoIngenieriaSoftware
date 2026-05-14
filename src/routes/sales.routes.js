@@ -13,6 +13,7 @@ router.get('/loyalty/config', authorizeRoles('gerente'), controller.getLoyaltyCo
 router.put('/loyalty/config', authorizeRoles('gerente'), controller.updateLoyaltyConfig);
 router.get('/vendedores', authorizeRoles('gerente'), controller.getSalesVendedores);
 router.get('/vendedores/rendimiento', authorizeRoles('gerente'), controller.getVendedoresRendimiento);
+router.get('/kpis', authorizeRoles('gerente'), controller.getSalesKpis);
 router.get('/report', authorizeRoles('gerente', 'vendedor'), controller.getSalesReport);
 router.post('/', authorizeRoles('gerente', 'vendedor'), controller.createSale);
 

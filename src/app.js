@@ -29,6 +29,7 @@ app.get('/', (req, res) => {
       '/api/sales/loyalty/config',
       '/api/sales/clients/search',
       '/api/sales/clients/:clientRef',
+      '/api/sales/kpis',
       '/api/opportunities',
       '/api/rewards'
     ]

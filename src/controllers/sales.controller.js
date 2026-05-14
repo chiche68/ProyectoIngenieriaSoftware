@@ -44,6 +44,16 @@ exports.getVendedoresRendimiento = async (req, res) => {
     }
 };
 
+exports.getSalesKpis = async (req, res) => {
+    try {
+        const { month, vendedor } = req.query;
+        const data = await service.getSalesKpis({ month, vendedor });
+        res.json(data);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
 exports.createSale = async (req, res) => {
     try {
         const payload = { ...req.body };

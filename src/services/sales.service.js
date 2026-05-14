@@ -728,8 +728,31 @@ exports.getVendedores = async () => {
         ORDER BY vendedor ASC
     `;
 
-    const [rows] = await db.execute(sql);
-    return rows;
+    const [saleRows] = await db.execute(sql);
+
+    const vendors = new Set((saleRows || []).map((row) => String(row.vendedor || '').trim()).filter(Boolean));
+
+    const hasOpp = await hasTable('oportunidades_negocio');
+    if (hasOpp) {
+        const [oppRows] = await db.execute(
+            `
+                SELECT DISTINCT vendedor
+                FROM oportunidades_negocio
+                WHERE vendedor IS NOT NULL
+                  AND vendedor <> ''
+                ORDER BY vendedor ASC
+            `
+        );
+
+        (oppRows || []).forEach((row) => {
+            const name = String(row.vendedor || '').trim();
+            if (name) vendors.add(name);
+        });
+    }
+
+    return Array.from(vendors)
+        .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+        .map((v) => ({ vendedor: v }));
 };
 
 exports.getReport = async (period, codigoCliente, vendedor) => {
@@ -828,6 +851,215 @@ exports.getVendedoresRendimiento = async (period) => {
 
     const [rows] = await db.execute(sql);
     return rows;
+};
+
+function isValidMonth(value) {
+    return /^\d{4}-\d{2}$/.test(String(value || '').trim());
+}
+
+function formatMysqlDateUtc(date) {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+
+function addUtcMonths(date, months) {
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0));
+    d.setUTCMonth(d.getUTCMonth() + months);
+    return d;
+}
+
+function getUtcMonthStart(month) {
+    const [year, mon] = String(month).split('-').map((part) => Number(part));
+    return new Date(Date.UTC(year, mon - 1, 1, 0, 0, 0));
+}
+
+function getCurrentMonthStringUtc() {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const mon = String(now.getUTCMonth() + 1).padStart(2, '0');
+    return `${year}-${mon}`;
+}
+
+exports.getSalesKpis = async ({ month, vendedor } = {}) => {
+    const targetMonth = isValidMonth(month) ? String(month).trim() : getCurrentMonthStringUtc();
+    const vendorFilter = String(vendedor || '').trim();
+
+    const monthStart = getUtcMonthStart(targetMonth);
+    const nextMonthStart = addUtcMonths(monthStart, 1);
+    const prevMonthStart = addUtcMonths(monthStart, -1);
+
+    const monthStartSql = formatMysqlDateUtc(monthStart);
+    const nextMonthStartSql = formatMysqlDateUtc(nextMonthStart);
+    const prevMonthStartSql = formatMysqlDateUtc(prevMonthStart);
+
+    const prevMonthString = `${prevMonthStart.getUTCFullYear()}-${String(prevMonthStart.getUTCMonth() + 1).padStart(2, '0')}`;
+
+    const selectParams = [
+        monthStartSql,
+        nextMonthStartSql,
+        monthStartSql,
+        nextMonthStartSql,
+        monthStartSql,
+        nextMonthStartSql,
+        prevMonthStartSql,
+        monthStartSql,
+        prevMonthStartSql,
+        monthStartSql,
+        prevMonthStartSql,
+        monthStartSql
+    ];
+
+    let vendorWhere = '';
+    const whereParams = [prevMonthStartSql, nextMonthStartSql];
+    if (vendorFilter) {
+        vendorWhere = 'AND vendedor = ?';
+        whereParams.push(vendorFilter);
+    }
+
+    // Ventas confirmadas para el mes objetivo y el mes anterior (comparativa).
+    const [salesRows] = await db.execute(
+        `
+            SELECT
+                vendedor,
+                SUM(CASE WHEN fecha >= ? AND fecha < ? THEN total ELSE 0 END) AS total_ventas_mes,
+                COUNT(CASE WHEN fecha >= ? AND fecha < ? THEN 1 END) AS cantidad_ventas_mes,
+                AVG(CASE WHEN fecha >= ? AND fecha < ? THEN total END) AS promedio_cierre_mes,
+                SUM(CASE WHEN fecha >= ? AND fecha < ? THEN total ELSE 0 END) AS total_ventas_mes_anterior,
+                COUNT(CASE WHEN fecha >= ? AND fecha < ? THEN 1 END) AS cantidad_ventas_mes_anterior,
+                AVG(CASE WHEN fecha >= ? AND fecha < ? THEN total END) AS promedio_cierre_mes_anterior
+            FROM ventas
+            WHERE estado = 'CONFIRMADA'
+              AND vendedor IS NOT NULL
+              AND vendedor <> ''
+              AND fecha >= ?
+              AND fecha < ?
+              ${vendorWhere}
+            GROUP BY vendedor
+            ORDER BY total_ventas_mes DESC, vendedor ASC
+        `,
+        [...selectParams, ...whereParams]
+    );
+
+    // Conversión: oportunidades GANADAS / total oportunidades creadas en el mes.
+    const hasOppTable = await hasTable('oportunidades_negocio');
+    let oppMap = new Map();
+
+    if (hasOppTable) {
+        const oppParams = [
+            monthStartSql,
+            nextMonthStartSql,
+            monthStartSql,
+            nextMonthStartSql,
+            prevMonthStartSql,
+            monthStartSql,
+            prevMonthStartSql,
+            monthStartSql,
+            prevMonthStartSql,
+            nextMonthStartSql
+        ];
+
+        let oppVendorWhere = '';
+        if (vendorFilter) {
+            oppVendorWhere = 'AND vendedor = ?';
+            oppParams.push(vendorFilter);
+        }
+
+        const [oppRows] = await db.execute(
+            `
+                SELECT
+                    vendedor,
+                    SUM(CASE WHEN fecha_creacion >= ? AND fecha_creacion < ? THEN 1 ELSE 0 END) AS oportunidades_mes,
+                    SUM(CASE WHEN fecha_creacion >= ? AND fecha_creacion < ? AND UPPER(estado) = 'GANADA' THEN 1 ELSE 0 END) AS oportunidades_ganadas_mes,
+                    SUM(CASE WHEN fecha_creacion >= ? AND fecha_creacion < ? THEN 1 ELSE 0 END) AS oportunidades_mes_anterior,
+                    SUM(CASE WHEN fecha_creacion >= ? AND fecha_creacion < ? AND UPPER(estado) = 'GANADA' THEN 1 ELSE 0 END) AS oportunidades_ganadas_mes_anterior
+                FROM oportunidades_negocio
+                WHERE vendedor IS NOT NULL
+                  AND vendedor <> ''
+                  AND fecha_creacion >= ?
+                  AND fecha_creacion < ?
+                  ${oppVendorWhere}
+                GROUP BY vendedor
+            `,
+            oppParams
+        );
+
+        oppMap = new Map(
+            (oppRows || []).map((row) => [
+                String(row.vendedor),
+                {
+                    oportunidades_mes: Number(row.oportunidades_mes || 0),
+                    oportunidades_ganadas_mes: Number(row.oportunidades_ganadas_mes || 0),
+                    oportunidades_mes_anterior: Number(row.oportunidades_mes_anterior || 0),
+                    oportunidades_ganadas_mes_anterior: Number(row.oportunidades_ganadas_mes_anterior || 0)
+                }
+            ])
+        );
+    }
+
+    const salesMap = new Map(
+        (salesRows || []).map((row) => [String(row.vendedor), row])
+    );
+
+    const vendorNames = new Set([...
+        Array.from(salesMap.keys()),
+        ...Array.from(oppMap.keys())
+    ].filter(Boolean));
+
+    const items = Array.from(vendorNames).map((vendorName) => {
+        const saleRow = salesMap.get(vendorName) || {};
+        const totalActual = Number(saleRow.total_ventas_mes || 0);
+        const totalAnterior = Number(saleRow.total_ventas_mes_anterior || 0);
+        const pct = totalAnterior > 0
+            ? ((totalActual - totalAnterior) / totalAnterior) * 100
+            : null;
+
+        const opp = oppMap.get(vendorName) || {
+            oportunidades_mes: 0,
+            oportunidades_ganadas_mes: 0,
+            oportunidades_mes_anterior: 0,
+            oportunidades_ganadas_mes_anterior: 0
+        };
+
+        const tasaConversion = opp.oportunidades_mes > 0
+            ? opp.oportunidades_ganadas_mes / opp.oportunidades_mes
+            : null;
+
+        return {
+            vendedor: vendorName,
+            ventas: {
+                total_mes: totalActual,
+                cantidad_mes: Number(saleRow.cantidad_ventas_mes || 0),
+                promedio_cierre_mes: saleRow.promedio_cierre_mes === null || saleRow.promedio_cierre_mes === undefined
+                    ? null
+                    : Number(saleRow.promedio_cierre_mes),
+                total_mes_anterior: totalAnterior,
+                cantidad_mes_anterior: Number(saleRow.cantidad_ventas_mes_anterior || 0),
+                promedio_cierre_mes_anterior: saleRow.promedio_cierre_mes_anterior === null || saleRow.promedio_cierre_mes_anterior === undefined
+                    ? null
+                    : Number(saleRow.promedio_cierre_mes_anterior),
+                variacion_pct_total: pct
+            },
+            conversion: {
+                oportunidades_mes: opp.oportunidades_mes,
+                ganadas_mes: opp.oportunidades_ganadas_mes,
+                tasa_mes: tasaConversion
+            }
+        };
+    });
+
+    items.sort((a, b) => {
+        const diff = Number(b?.ventas?.total_mes || 0) - Number(a?.ventas?.total_mes || 0);
+        if (diff !== 0) return diff;
+        return String(a?.vendedor || '').localeCompare(String(b?.vendedor || ''), 'es', { sensitivity: 'base' });
+    });
+
+    return {
+        month: targetMonth,
+        previous_month: prevMonthString,
+        scope: vendorFilter ? 'vendedor' : 'equipo',
+        vendedor: vendorFilter || null,
+        items
+    };
 };
 
 exports.getLoyaltyConfig = async () => {
