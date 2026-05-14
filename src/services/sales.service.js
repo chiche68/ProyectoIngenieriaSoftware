@@ -2,6 +2,7 @@
 const DEFAULT_POINTS_PER_AMOUNT = 10;
 const DEFAULT_POINTS_AWARDED = 1;
 
+// Funciones auxiliares para verificar estructura de la base de datos
 async function hasTable(tableName, executor = db) {
     const sql = `
         SELECT 1
