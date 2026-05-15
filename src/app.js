@@ -5,6 +5,21 @@ const { authenticate, authorizeRoles } = require('./middleware/auth.middleware')
 
 const app = express();
 
+const allowedOrigins = new Set([
+  'http://127.0.0.1:5500',
+  'http://localhost:5500',
+  'https://proyectoingenieriasoftwarefrontend-production.up.railway.app',
+  'https://proyectoingenieriasoftwarefrontend-production-6a84.up.railway.app'
+]);
+
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.add(process.env.FRONTEND_URL);
+}
+
+function isAllowedRailwayFrontend(origin) {
+  return /^https:\/\/proyectoingenieriasoftwarefrontend-[a-z0-9-]+\.up\.railway\.app$/i.test(origin);
+}
+
 initializeAuth().catch((error) => {
   console.error('Error inicializando autenticación:', error.message);
   console.error('Stack trace:', error.stack);
@@ -12,12 +27,17 @@ initializeAuth().catch((error) => {
 });
 
 app.use(cors({
-  origin: [
-    'http://127.0.0.1:5500',  // Frontend local
-    'http://localhost:5500',   // Frontend local alternativo
-    'https://proyectoingenieriasoftware-production.up.railway.app', // Railway correcto
-    '*' // Permitir cualquier origen en desarrollo
-  ],
+  origin(origin, callback) {
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.has(origin) || isAllowedRailwayFrontend(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS bloqueado para origen: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
