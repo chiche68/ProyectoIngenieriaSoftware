@@ -669,61 +669,6 @@ exports.getClientDetail = async (clientRef) => {
     merged.sort((a, b) => Number(b.total_ventas || 0) - Number(a.total_ventas || 0));
 
     return merged;
-
-    if (addressColumn && direccion) {
-        insertColumns.push(`\`${addressColumn}\``);
-        values.push('?');
-        baseParams.push(direccion);
-    }
-
-    if (nitColumn && nit) {
-        insertColumns.push(`\`${nitColumn}\``);
-        values.push('?');
-        baseParams.push(nit);
-    }
-
-    if (codeColumn) {
-        insertColumns.push(`\`${codeColumn}\``);
-        values.push('?');
-    }
-
-    if (insertColumns.length === 0) {
-        throw new Error('No se pudo construir el registro del cliente');
-    }
-
-    const sql = `
-        INSERT INTO clientes (${insertColumns.join(', ')})
-        VALUES (${values.join(', ')})
-    `;
-
-    const maxInsertAttempts = codeColumn ? 3 : 1;
-
-    for (let attempt = 0; attempt < maxInsertAttempts; attempt += 1) {
-        const params = [...baseParams];
-        let generatedCode = null;
-
-        if (codeColumn) {
-            generatedCode = await generateUniqueClientCode(codeColumn);
-            params.push(generatedCode);
-        }
-
-        try {
-            const [result] = await db.execute(sql, params);
-            return {
-                message: 'Cliente registrado correctamente',
-                id: result.insertId,
-                codigo_cliente: generatedCode
-            };
-        } catch (error) {
-            // Si hay indice unico en codigo_cliente, reintentamos ante colision de concurrencia.
-            if (codeColumn && error && error.code === 'ER_DUP_ENTRY' && attempt < maxInsertAttempts - 1) {
-                continue;
-            }
-            throw error;
-        }
-    }
-
-    throw new Error('No se pudo registrar el cliente. Intenta nuevamente.');
 };
 
 exports.create = async (data) => {
