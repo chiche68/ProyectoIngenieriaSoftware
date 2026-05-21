@@ -81,6 +81,16 @@ exports.getSalesBySeller = async (req, res) => {
     }
 };
 
+exports.getSaleDetail = async (req, res) => {
+    try {
+        const data = await service.getSaleDetail(req.params.saleId, req.user);
+        res.json(data);
+    } catch (error) {
+        const status = error.message === 'Venta no encontrada' ? 404 : 400;
+        res.status(status).json({ error: error.message });
+    }
+};
+
 exports.createSale = async (req, res) => {
     try {
         const payload = { ...req.body };

@@ -1735,4 +1735,73 @@ exports.getSalesBySeller = async (vendedor, limit = 100) => {
     return rows;
 };
 
+exports.getSaleDetail = async (saleId, currentUser = null) => {
+    const id = Number(saleId);
+    if (!Number.isInteger(id) || id <= 0) {
+        throw new Error('El id de la venta no es válido');
+    }
+
+    const [salesRows] = await db.execute(
+        `
+            SELECT
+                id,
+                fecha,
+                total,
+                total_normal,
+                descuento_aplicado,
+                estado,
+                vendedor,
+                codigo_cliente,
+                cliente_id,
+                premio_id,
+                codigo_cupon
+            FROM ventas
+            WHERE id = ?
+            LIMIT 1
+        `,
+        [id]
+    );
+
+    if (salesRows.length === 0) {
+        throw new Error('Venta no encontrada');
+    }
+
+    const sale = salesRows[0];
+    if (currentUser?.rol === 'vendedor') {
+        const currentVendor = String(currentUser.nombre || currentUser.correo || '').trim();
+        const saleVendor = String(sale.vendedor || '').trim();
+        if (!currentVendor || saleVendor !== currentVendor) {
+            throw new Error('Venta no encontrada');
+        }
+    }
+
+    let items = [];
+    try {
+        const [detailRows] = await db.execute(
+            `
+                SELECT
+                    producto_id,
+                    codigo_producto,
+                    nombre_producto,
+                    cantidad,
+                    precio_unitario,
+                    subtotal
+                FROM venta_detalle
+                WHERE venta_id = ?
+                ORDER BY id ASC
+            `,
+            [id]
+        );
+
+        items = detailRows || [];
+    } catch (error) {
+        items = [];
+    }
+
+    return {
+        ...sale,
+        items
+    };
+};
+
 
