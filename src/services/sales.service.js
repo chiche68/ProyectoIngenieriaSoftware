@@ -638,109 +638,80 @@ exports.searchClients = async (rawQuery, limit = 20) => {
 };
 
 exports.getClientDetail = async (clientRef) => {
-    // Compute local period bounds [start, end)
-    const now = new Date();
-    let start = null;
-    let end = null;
+    const ref = String(clientRef || '').trim();
+    if (!ref) {
+        throw new Error('Referencia de cliente inválida');
+    }
 
-    switch (String(period || '').toLowerCase()) {
-        case 'day':
-            start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-            end = new Date(start);
-            end.setDate(start.getDate() + 1);
-            break;
-        case 'week': {
-            // ISO week: Monday as first day
-            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const day = d.getDay() === 0 ? 7 : d.getDay();
-            const isoStart = new Date(d);
-            if (day <= 4) {
-                isoStart.setDate(d.getDate() - (day - 1));
-            } else {
-                isoStart.setDate(d.getDate() + (8 - day));
-            }
-            isoStart.setHours(0, 0, 0, 0);
-            start = isoStart;
-            end = new Date(start);
-            end.setDate(start.getDate() + 7);
-            break;
+    await ensureLoyaltyInfrastructure();
+
+    const hasClientesTable = await hasTable('clientes');
+    if (hasClientesTable) {
+        const columns = await getTableColumns('clientes');
+        const idColumn = findColumn(columns, ['id', 'cliente_id', 'id_cliente']);
+        const codeColumn = findColumn(columns, ['codigo_cliente', 'codigo', 'cod_cliente']);
+        const nameColumn = findColumn(columns, ['nombre', 'nombres', 'nombre_cliente', 'razon_social']);
+        const emailColumn = findColumn(columns, ['correo', 'email', 'mail', 'correo_electronico']);
+        const phoneColumn = findColumn(columns, ['numero', 'telefono', 'celular', 'telefono_movil', 'telefono1']);
+        const addressColumn = findColumn(columns, ['direccion', 'domicilio', 'direccion_fiscal']);
+        const nitColumn = findColumn(columns, ['nit', 'nit_cliente', 'ruc', 'tax_id']);
+        const pointsColumn = findColumn(columns, ['puntos_acumulados']);
+
+        const whereParts = [];
+        const params = [];
+
+        if (idColumn && /^\d+$/.test(ref)) {
+            whereParts.push(`\`${idColumn}\` = ?`);
+            params.push(Number(ref));
         }
-        case 'month':
-            start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-            end = addLocalMonths(start, 1);
-            break;
-        case 'year':
-            start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
-            end = new Date(now.getFullYear() + 1, 0, 1, 0, 0, 0, 0);
-            break;
-        default:
-            // default to current month
-            start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-            end = addLocalMonths(start, 1);
+
+        if (codeColumn) {
+            whereParts.push(`\`${codeColumn}\` = ?`);
+            params.push(ref);
+        }
+
+        if (whereParts.length === 0) {
+            throw new Error('Cliente no encontrado');
+        }
+
+        const selectColumns = [];
+        if (idColumn) selectColumns.push(`\`${idColumn}\` AS cliente_id`);
+        if (codeColumn) selectColumns.push(`\`${codeColumn}\` AS codigo_cliente`);
+        if (nameColumn) selectColumns.push(`\`${nameColumn}\` AS nombre`);
+        if (emailColumn) selectColumns.push(`\`${emailColumn}\` AS correo`);
+        if (phoneColumn) selectColumns.push(`\`${phoneColumn}\` AS numero`);
+        if (addressColumn) selectColumns.push(`\`${addressColumn}\` AS direccion`);
+        if (nitColumn) selectColumns.push(`\`${nitColumn}\` AS nit`);
+        if (pointsColumn) selectColumns.push(`\`${pointsColumn}\` AS puntos_acumulados`);
+
+        const [rows] = await db.execute(
+            `
+                SELECT ${selectColumns.join(', ')}
+                FROM clientes
+                WHERE ${whereParts.join(' OR ')}
+                LIMIT 1
+            `,
+            params
+        );
+
+        if (rows.length > 0) {
+            return rows[0];
+        }
     }
 
-    const startSql = formatMysqlDateLocal(start);
-    const endSql = formatMysqlDateLocal(end);
-
-    const sql = `
-        SELECT
-            vendedor,
-            SUM(total) AS total_ventas,
-            COUNT(*) AS cantidad_ventas,
-            AVG(total) AS promedio_venta
-        FROM ventas
-        WHERE UPPER(TRIM(estado)) = 'CONFIRMADA'
-          AND vendedor IS NOT NULL
-          AND vendedor <> ''
-          AND fecha >= ?
-          AND fecha < ?
-        GROUP BY vendedor
-        ORDER BY total_ventas DESC
-    `;
-
-    const [rows] = await db.execute(sql, [startSql, endSql]);
-
-    // Merge with vendor list so vendors with zero sales are included
-    let allVendors = [];
-    try {
-        const vendorsList = await exports.getVendedores();
-        allVendors = (vendorsList || []).map((v) => String(v.vendedor || '').trim()).filter(Boolean);
-    } catch (err) {
-        allVendors = [];
-    }
-
-    const salesMap = new Map((rows || []).map((r) => [String(r.vendedor), r]));
-
-    const vendorsToUse = allVendors.length > 0 ? allVendors : Array.from(new Set((rows || []).map((r) => String(r.vendedor))));
-
-    const merged = vendorsToUse.map((vendorName) => {
-        const r = salesMap.get(vendorName) || {};
-        return {
-            vendedor: vendorName,
-            total_ventas: Number(r.total_ventas || 0),
-            cantidad_ventas: Number(r.cantidad_ventas || 0),
-            promedio_venta: r.promedio_venta === null || r.promedio_venta === undefined ? null : Number(r.promedio_venta)
-        };
+    const clients = await exports.getClients();
+    const normalizedRef = ref.toLowerCase();
+    const match = (clients || []).find((client) => {
+        const clientId = String(client?.cliente_id ?? '').trim();
+        const code = String(client?.codigo_cliente ?? '').trim();
+        return clientId === ref || code.toLowerCase() === normalizedRef;
     });
 
-    // Include any vendors found in rows but not in vendor list
-    if (rows && rows.length > 0) {
-        rows.forEach((r) => {
-            const name = String(r.vendedor || '').trim();
-            if (name && !vendorsToUse.includes(name)) {
-                merged.push({
-                    vendedor: name,
-                    total_ventas: Number(r.total_ventas || 0),
-                    cantidad_ventas: Number(r.cantidad_ventas || 0),
-                    promedio_venta: r.promedio_venta === null || r.promedio_venta === undefined ? null : Number(r.promedio_venta)
-                });
-            }
-        });
+    if (!match) {
+        throw new Error('Cliente no encontrado');
     }
 
-    merged.sort((a, b) => Number(b.total_ventas || 0) - Number(a.total_ventas || 0));
-
-    return merged;
+    return match;
 };
 
 function normalizeSaleLineItems(items) {
