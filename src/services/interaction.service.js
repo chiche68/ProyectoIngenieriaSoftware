@@ -72,3 +72,25 @@ exports.getAll = async () => {
     const [rows] = await db.execute(sql);
     return rows;
 };
+
+exports.delete = async (interactionId) => {
+    const id = Number(interactionId);
+    if (!Number.isInteger(id) || id <= 0) {
+        throw new Error('Id de interacción inválido');
+    }
+
+    const [result] = await db.execute(
+        `
+            DELETE FROM interacciones_cliente
+            WHERE id = ?
+            LIMIT 1
+        `,
+        [id]
+    );
+
+    if (result.affectedRows === 0) {
+        throw new Error('Interacción no encontrada');
+    }
+
+    return { message: 'Interacción eliminada correctamente' };
+};

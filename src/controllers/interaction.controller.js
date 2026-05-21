@@ -23,3 +23,13 @@ exports.getAll = async (req, res) => {
     const data = await service.getAll();
     res.json(data);
 };
+
+exports.deleteInteraction = async (req, res) => {
+    try {
+        const result = await service.delete(req.params.id);
+        res.json(result);
+    } catch (error) {
+        const status = error.message === 'Interacción no encontrada' ? 404 : 400;
+        res.status(status).json({ error: error.message });
+    }
+};

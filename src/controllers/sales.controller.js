@@ -9,6 +9,16 @@ exports.getSalesClients = async (req, res) => {
     }
 };
 
+exports.getInventoryProducts = async (req, res) => {
+    try {
+        const { q = '' } = req.query;
+        const data = await service.getInventoryProducts(q);
+        res.json(data);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
 exports.getSalesVendedores = async (req, res) => {
     try {
         const data = await service.getVendedores();

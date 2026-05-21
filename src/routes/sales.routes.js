@@ -4,6 +4,7 @@ const controller = require('../controllers/sales.controller');
 const { authorizeRoles } = require('../middleware/auth.middleware');
 
 router.get('/clients', authorizeRoles('gerente', 'vendedor'), controller.getSalesClients);
+router.get('/products', authorizeRoles('gerente', 'vendedor'), controller.getInventoryProducts);
 router.get('/clients/search', authorizeRoles('gerente'), controller.searchClients);
 router.get('/clients/:clientRef', authorizeRoles('gerente', 'vendedor'), controller.getClientDetail);
 router.post('/clients', authorizeRoles('gerente'), controller.createClient);

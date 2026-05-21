@@ -70,6 +70,28 @@ CREATE TABLE IF NOT EXISTS ventas (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ==========================================================
+-- 3.1) Detalle de ventas
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS venta_detalle (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  venta_id INT NOT NULL,
+  producto_id INT NOT NULL,
+  codigo_producto VARCHAR(100) NOT NULL,
+  nombre_producto VARCHAR(255) NOT NULL,
+  cantidad INT NOT NULL,
+  precio_unitario DECIMAL(10,2) NOT NULL,
+  subtotal DECIMAL(10,2) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_venta_detalle_venta_id (venta_id),
+  KEY idx_venta_detalle_producto_id (producto_id),
+  KEY idx_venta_detalle_codigo_producto (codigo_producto),
+  CONSTRAINT fk_venta_detalle_venta
+    FOREIGN KEY (venta_id) REFERENCES ventas(id)
+    ON UPDATE RESTRICT
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ==========================================================
 -- 4) Fidelización
 -- ==========================================================
 CREATE TABLE IF NOT EXISTS configuracion_fidelizacion (

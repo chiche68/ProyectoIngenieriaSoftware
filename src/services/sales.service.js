@@ -2,6 +2,7 @@
 const db = require('../config/database');
 const DEFAULT_POINTS_PER_AMOUNT = 10;
 const DEFAULT_POINTS_AWARDED = 1;
+const INVENTORY_PRODUCTS_API_URL = process.env.INVENTORY_PRODUCTS_API_URL || 'https://inventarioapi-the3.onrender.com/api/Productos';
 
 function buildCouponCode() {
     const timestampPart = Date.now().toString(36).toUpperCase();
@@ -61,6 +62,54 @@ async function hasIndex(tableName, indexName, executor = db) {
 
     const [rows] = await executor.execute(sql, [tableName, indexName]);
     return rows.length > 0;
+}
+
+function normalizeInventoryProduct(product) {
+    const id = Number(product?.id ?? 0);
+    const codigo = String(product?.codigo ?? '').trim();
+    const nombre = String(product?.nombre ?? '').trim();
+    const descripcion = String(product?.descripcion ?? '').trim();
+    const categoria = String(product?.categoria ?? '').trim();
+    const bodegaNombre = String(product?.bodegaNombre ?? '').trim();
+    const precioVenta = Number(product?.precioVenta ?? 0);
+    const stockActual = Number(product?.stockActual ?? product?.tockActual ?? 0);
+    const stockMinimo = Number(product?.stockMinimo ?? 0);
+    const estado = product?.estado !== false && product?.estado !== 0 && String(product?.estado || '').toLowerCase() !== 'false';
+
+    return {
+        id: Number.isFinite(id) ? id : 0,
+        codigo,
+        nombre,
+        descripcion,
+        categoria,
+        bodegaNombre,
+        precioVenta: Number.isFinite(precioVenta) ? Number(precioVenta.toFixed(2)) : 0,
+        stockActual: Number.isFinite(stockActual) ? stockActual : 0,
+        stockMinimo: Number.isFinite(stockMinimo) ? stockMinimo : 0,
+        estado,
+        stockBajo: Boolean(product?.stockBajo),
+        nivelInventario: String(product?.nivelInventario ?? '').trim(),
+        raw: product
+    };
+}
+
+async function fetchInventoryProducts() {
+    const response = await fetch(INVENTORY_PRODUCTS_API_URL, {
+        headers: {
+            Accept: 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`No se pudo obtener el catálogo de productos (${response.status})`);
+    }
+
+    const payload = await response.json();
+    const items = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
+
+    return items
+        .map(normalizeInventoryProduct)
+        .filter((product) => product.id > 0 && (product.codigo || product.nombre));
 }
 
 function normalizeSaleDate(value) {
@@ -124,6 +173,29 @@ async function ensureSalesRewardColumns(executor = db) {
     if (!(await hasIndex('ventas', 'idx_ventas_premio_id', executor))) {
         await executor.query(`ALTER TABLE ventas ADD INDEX idx_ventas_premio_id (premio_id)`);
     }
+}
+
+async function ensureSaleItemsTable(executor = db) {
+    await executor.query(`
+        CREATE TABLE IF NOT EXISTS venta_detalle (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            venta_id INT NOT NULL,
+            producto_id INT NOT NULL,
+            codigo_producto VARCHAR(100) NOT NULL,
+            nombre_producto VARCHAR(255) NOT NULL,
+            cantidad INT NOT NULL,
+            precio_unitario DECIMAL(10,2) NOT NULL,
+            subtotal DECIMAL(10,2) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_venta_detalle_venta_id (venta_id),
+            KEY idx_venta_detalle_producto_id (producto_id),
+            KEY idx_venta_detalle_codigo_producto (codigo_producto),
+            CONSTRAINT fk_venta_detalle_venta
+                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+                ON UPDATE RESTRICT
+                ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+    `);
 }
 
 exports.getClients = async () => {
@@ -671,13 +743,45 @@ exports.getClientDetail = async (clientRef) => {
     return merged;
 };
 
+function normalizeSaleLineItems(items) {
+    if (!Array.isArray(items)) {
+        return [];
+    }
+
+    return items
+        .map((item) => {
+            const quantity = Number(item?.cantidad ?? item?.quantity ?? 0);
+            const productId = Number(item?.producto_id ?? item?.product_id ?? item?.id ?? 0);
+            const codigo = String(item?.codigo_producto ?? item?.codigo ?? '').trim();
+            const nombre = String(item?.nombre_producto ?? item?.nombre ?? '').trim();
+            const price = Number(item?.precio_unitario ?? item?.unit_price ?? item?.precioVenta ?? 0);
+
+            return {
+                productId: Number.isFinite(productId) ? productId : 0,
+                codigo,
+                nombre,
+                quantity: Number.isFinite(quantity) ? Math.trunc(quantity) : 0,
+                unitPrice: Number.isFinite(price) ? Number(price.toFixed(2)) : 0
+            };
+        })
+        .filter((item) => item.productId > 0 || item.codigo || item.nombre)
+        .filter((item) => item.quantity > 0);
+}
+
 exports.create = async (data) => {
     if (!data.vendedor || !data.vendedor.trim()) {
         throw new Error('El vendedor es obligatorio');
     }
 
-    const total = Number(data.total);
-    if (!Number.isFinite(total) || total <= 0) {
+    const rawSaleItems = Array.isArray(data.items) && data.items.length > 0
+        ? data.items
+        : Array.isArray(data.productos)
+            ? data.productos
+            : [];
+    const saleItemsInput = normalizeSaleLineItems(rawSaleItems);
+    const hasSaleItems = saleItemsInput.length > 0;
+    const initialTotal = Number(data.total);
+    if (!hasSaleItems && (!Number.isFinite(initialTotal) || initialTotal <= 0)) {
         throw new Error('El total debe ser mayor que 0');
     }
 
@@ -701,6 +805,9 @@ exports.create = async (data) => {
 
     await ensureLoyaltyInfrastructure();
     await ensureSalesRewardColumns();
+    if (hasSaleItems) {
+        await ensureSaleItemsTable();
+    }
 
     const loyaltyConfig = await getLoyaltyConfigRecord();
     const connection = await db.getConnection();
@@ -710,6 +817,53 @@ exports.create = async (data) => {
 
         const resolvedClient = await resolveClientForSale(data, connection);
         const codigoCliente = resolvedClient.codigoCliente ? String(resolvedClient.codigoCliente).trim() : '';
+
+        let saleItems = [];
+        let saleBaseTotal = hasSaleItems ? 0 : initialTotal;
+
+        if (hasSaleItems) {
+            const inventoryProducts = await fetchInventoryProducts();
+            const productById = new Map(inventoryProducts.map((product) => [Number(product.id), product]));
+            const productByCode = new Map(inventoryProducts.map((product) => [String(product.codigo || '').trim(), product]));
+
+            saleItems = saleItemsInput.map((item) => {
+                const product = item.productId > 0
+                    ? productById.get(item.productId)
+                    : null;
+                const matchedProduct = product || (item.codigo ? productByCode.get(item.codigo) : null) || (item.nombre ? inventoryProducts.find((catalogItem) => String(catalogItem.nombre || '').trim().toLowerCase() === item.nombre.toLowerCase()) : null);
+
+                if (!matchedProduct) {
+                    throw new Error(`No se encontró el producto ${item.codigo || item.nombre || item.productId}`);
+                }
+
+                if (!matchedProduct.estado) {
+                    throw new Error(`El producto ${matchedProduct.nombre || matchedProduct.codigo} no está activo`);
+                }
+
+                if (Number.isFinite(matchedProduct.stockActual) && item.quantity > matchedProduct.stockActual) {
+                    throw new Error(`Stock insuficiente para ${matchedProduct.nombre || matchedProduct.codigo}`);
+                }
+
+                const unitPrice = Number(matchedProduct.precioVenta || item.unitPrice || 0);
+                const subtotal = Number((unitPrice * item.quantity).toFixed(2));
+                saleBaseTotal += subtotal;
+
+                return {
+                    productId: matchedProduct.id,
+                    codigo: matchedProduct.codigo,
+                    nombre: matchedProduct.nombre,
+                    quantity: item.quantity,
+                    unitPrice,
+                    subtotal
+                };
+            });
+
+            if (saleItems.length === 0) {
+                throw new Error('Debes ingresar al menos un producto para la venta');
+            }
+
+            saleBaseTotal = Number(saleBaseTotal.toFixed(2));
+        }
 
         let rewardRecord = null;
         let discountAmount = 0;
@@ -746,7 +900,7 @@ exports.create = async (data) => {
                 throw new Error('Saldo insuficiente para canjear este premio');
             }
 
-            const totalValue = Number(total);
+            const totalValue = Number(saleBaseTotal);
             let discountValue = Number(rewardRecord.valor_descuento || 0);
             if (rewardRecord.tipo_descuento === 'PORCENTAJE') {
                 if (discountValue > 0 && discountValue <= 1) {
@@ -774,7 +928,7 @@ exports.create = async (data) => {
             };
         }
 
-        const totalNormal = total;
+        const totalNormal = Number(saleBaseTotal.toFixed(2));
         const finalTotal = Number(Math.max(0, totalNormal - discountAmount).toFixed(2));
 
         const insertColumns = [];
@@ -818,6 +972,34 @@ exports.create = async (data) => {
         `;
 
         const [result] = await connection.execute(sql, params);
+
+        if (hasSaleItems) {
+            for (const item of saleItems) {
+                await connection.execute(
+                    `
+                        INSERT INTO venta_detalle (
+                            venta_id,
+                            producto_id,
+                            codigo_producto,
+                            nombre_producto,
+                            cantidad,
+                            precio_unitario,
+                            subtotal
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    `,
+                    [
+                        result.insertId,
+                        item.productId,
+                        item.codigo,
+                        item.nombre,
+                        item.quantity,
+                        item.unitPrice,
+                        item.subtotal
+                    ]
+                );
+            }
+        }
 
         if (rewardRecord) {
             await connection.execute(
@@ -910,6 +1092,7 @@ exports.create = async (data) => {
             total_normal: totalNormal,
             descuento_aplicado: discountAmount,
             total: finalTotal,
+            items: saleItems,
             reward: rewardInvoice,
             loyalty: {
                 puntos_obtenidos: puntosObtenidos,
@@ -927,6 +1110,27 @@ exports.create = async (data) => {
     }
 };
 
+
+exports.getInventoryProducts = async (query = '') => {
+    const products = await fetchInventoryProducts();
+    const term = String(query || '').trim().toLowerCase();
+
+    if (!term) {
+        return products;
+    }
+
+    return products.filter((product) => {
+        const fields = [
+            product.codigo,
+            product.nombre,
+            product.descripcion,
+            product.categoria,
+            product.bodegaNombre
+        ];
+
+        return fields.some((field) => String(field || '').toLowerCase().includes(term));
+    });
+};
 
 exports.getVendedores = async () => {
     const hasVendedor = await hasColumn('ventas', 'vendedor');
