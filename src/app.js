@@ -27,17 +27,9 @@ initializeAuth().catch((error) => {
 });
 
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    if (allowedOrigins.has(origin) || isAllowedRailwayFrontend(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error(`CORS bloqueado para origen: ${origin}`));
-  },
+  // Refleja el origen de la petición y permite credenciales (cookies/headers).
+  // Atención: esto permite cualquier origen y puede ser un riesgo de seguridad.
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
