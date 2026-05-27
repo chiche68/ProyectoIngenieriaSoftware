@@ -54,6 +54,23 @@ function inferCategoryFromRoute(route) {
     return 'GENERAL';
 }
 
+function getAuditCategorySqlExpression() {
+    return `
+        CASE
+            WHEN categoria IS NOT NULL AND categoria <> '' AND categoria <> 'GENERAL' THEN categoria
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%auth/login%' THEN 'LOGIN'
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%sales/clients%' THEN 'CLIENTES'
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%sales%' THEN 'VENTAS'
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%tickets%' THEN 'TICKETS'
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%interactions%' THEN 'INTERACCIONES'
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%opportunities%' THEN 'OPORTUNIDADES'
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%rewards%' THEN 'RECOMPENSAS'
+            WHEN LOWER(CONCAT(COALESCE(ruta, ''), ' ', COALESCE(recurso, ''))) LIKE '%users%' THEN 'USUARIOS'
+            ELSE 'GENERAL'
+        END
+    `;
+}
+
 async function ensureAuditTable() {
     if (!auditTableReady) {
         auditTableReady = (async () => {
@@ -90,6 +107,14 @@ async function ensureAuditTable() {
                     ADD INDEX idx_bitacora_categoria (categoria)
                 `);
             }
+
+            await db.execute(`
+                UPDATE bitacoras_auditoria
+                SET categoria = ${getAuditCategorySqlExpression()}
+                WHERE categoria IS NULL
+                   OR categoria = ''
+                   OR categoria = 'GENERAL'
+            `);
         })();
     }
 
@@ -182,7 +207,8 @@ exports.listAuditEvents = async ({ limit = 100, categoria = '' } = {}) => {
 
     const safeLimit = normalizeLimit(limit, 100);
     const safeCategory = normalizeCategory(categoria, '');
-    const whereSql = safeCategory ? 'WHERE categoria = ?' : '';
+    const categoryExpression = getAuditCategorySqlExpression();
+    const whereSql = safeCategory ? `WHERE ${categoryExpression} = ?` : '';
     const params = safeCategory ? [safeCategory] : [];
 
     const [rows] = await db.execute(
@@ -193,7 +219,7 @@ exports.listAuditEvents = async ({ limit = 100, categoria = '' } = {}) => {
                 usuario_nombre,
                 usuario_correo,
                 rol,
-                categoria,
+                ${categoryExpression} AS categoria,
                 accion,
                 recurso,
                 metodo,
