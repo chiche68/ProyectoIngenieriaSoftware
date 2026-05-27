@@ -25,6 +25,7 @@ exports.login = async (req, res) => {
             usuario_nombre: result.user?.nombre,
             usuario_correo: result.user?.correo,
             rol: result.user?.rol,
+            categoria: 'LOGIN',
             accion: 'INICIO DE SESIÓN',
             recurso: 'auth/login',
             metodo: 'POST',

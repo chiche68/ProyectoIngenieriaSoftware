@@ -244,6 +244,7 @@ CREATE TABLE IF NOT EXISTS bitacoras_auditoria (
   usuario_nombre VARCHAR(120) NULL,
   usuario_correo VARCHAR(190) NULL,
   rol VARCHAR(40) NULL,
+  categoria VARCHAR(60) NOT NULL DEFAULT 'GENERAL',
   accion VARCHAR(190) NOT NULL,
   recurso VARCHAR(190) NOT NULL,
   metodo VARCHAR(10) NOT NULL,
@@ -255,6 +256,7 @@ CREATE TABLE IF NOT EXISTS bitacoras_auditoria (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_bitacora_usuario_id (usuario_id),
   KEY idx_bitacora_rol (rol),
+  KEY idx_bitacora_categoria (categoria),
   KEY idx_bitacora_accion (accion),
   KEY idx_bitacora_metodo (metodo),
   KEY idx_bitacora_created_at (created_at)

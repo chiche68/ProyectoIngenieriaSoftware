@@ -38,6 +38,20 @@ function getAuditAction(method, routePath) {
     return `${normalizedMethod} ${cleanRoute}`;
 }
 
+function getAuditCategory(routePath) {
+    const route = String(routePath || '').toLowerCase();
+
+    if (route.includes('/sales/clients')) return 'CLIENTES';
+    if (route.includes('/sales')) return 'VENTAS';
+    if (route.includes('/tickets')) return 'TICKETS';
+    if (route.includes('/interactions')) return 'INTERACCIONES';
+    if (route.includes('/opportunities')) return 'OPORTUNIDADES';
+    if (route.includes('/rewards')) return 'RECOMPENSAS';
+    if (route.includes('/users')) return 'USUARIOS';
+
+    return 'GENERAL';
+}
+
 function shouldIgnoreRequest(req) {
     const pathname = String(req.originalUrl || req.path || '');
     return IGNORED_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
@@ -68,6 +82,7 @@ function auditRequests(req, res, next) {
             usuario_nombre: req.user.nombre,
             usuario_correo: req.user.correo,
             rol: req.user.rol,
+            categoria: getAuditCategory(routePath),
             accion: getAuditAction(req.method, routePath),
             recurso: routePath || req.originalUrl || req.path,
             metodo: req.method,
