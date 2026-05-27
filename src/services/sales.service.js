@@ -207,6 +207,8 @@ exports.getClients = async () => {
 
         const idColumn = columns.find((column) => ['cliente_id', 'id_cliente', 'id'].includes(column));
         const codigoColumn = columns.find((column) => ['codigo_cliente', 'codigo', 'cod_cliente'].includes(column));
+        const activeColumn = columns.find((column) => ['activo', 'active', 'estado'].includes(column));
+        const activeFilter = activeColumn ? `AND \`${activeColumn}\` <> 0` : '';
 
         if (codigoColumn) {
             const sql = `
@@ -216,6 +218,7 @@ exports.getClients = async () => {
                 FROM clientes
                 WHERE \`${codigoColumn}\` IS NOT NULL
                   AND \`${codigoColumn}\` <> ''
+                  ${activeFilter}
                 ORDER BY \`${codigoColumn}\` ASC
             `;
 
@@ -233,6 +236,7 @@ exports.getClients = async () => {
                     \`${idColumn}\` AS cliente_id
                 FROM clientes
                 WHERE \`${idColumn}\` IS NOT NULL
+                  ${activeFilter}
                 ORDER BY \`${idColumn}\` ASC
             `;
 
@@ -378,6 +382,21 @@ async function ensureClientLoyaltyColumn(executor = db) {
     }
 }
 
+async function ensureClientActiveColumn(executor = db) {
+    const clientesTableExists = await hasTable('clientes', executor);
+    if (!clientesTableExists) {
+        return;
+    }
+
+    const hasActiveColumn = await hasColumn('clientes', 'activo', executor);
+    if (!hasActiveColumn) {
+        await executor.query(`
+            ALTER TABLE clientes
+            ADD COLUMN activo TINYINT(1) NOT NULL DEFAULT 1
+        `);
+    }
+}
+
 async function ensureLoyaltyConfigTable(executor = db) {
     await executor.query(`
         CREATE TABLE IF NOT EXISTS configuracion_fidelizacion (
@@ -417,6 +436,7 @@ async function ensurePointsLogTable(executor = db) {
 
 async function ensureLoyaltyInfrastructure(executor = db) {
     await ensureClientLoyaltyColumn(executor);
+    await ensureClientActiveColumn(executor);
     await ensureLoyaltyConfigTable(executor);
     await ensurePointsLogTable(executor);
 }
@@ -575,6 +595,7 @@ exports.searchClients = async (rawQuery, limit = 20) => {
     const addressColumn = findColumn(columns, ['direccion', 'domicilio', 'direccion_fiscal']);
     const nitColumn = findColumn(columns, ['nit', 'nit_cliente', 'ruc', 'tax_id']);
     const pointsColumn = findColumn(columns, ['puntos_acumulados']);
+    const activeColumn = findColumn(columns, ['activo', 'active', 'estado']);
 
     const whereClauses = [];
     const params = [];
@@ -628,7 +649,8 @@ exports.searchClients = async (rawQuery, limit = 20) => {
         SELECT
             ${selectColumns.join(',\n            ')}
         FROM clientes
-        WHERE ${whereClauses.join(' OR ')}
+        WHERE (${whereClauses.join(' OR ')})
+          ${activeColumn ? `AND \`${activeColumn}\` <> 0` : ''}
         ORDER BY ${orderBy}
         LIMIT ${maxLimit}
     `;
@@ -656,6 +678,7 @@ exports.getClientDetail = async (clientRef) => {
         const addressColumn = findColumn(columns, ['direccion', 'domicilio', 'direccion_fiscal']);
         const nitColumn = findColumn(columns, ['nit', 'nit_cliente', 'ruc', 'tax_id']);
         const pointsColumn = findColumn(columns, ['puntos_acumulados']);
+        const activeColumn = findColumn(columns, ['activo', 'active', 'estado']);
 
         const whereParts = [];
         const params = [];
@@ -688,7 +711,8 @@ exports.getClientDetail = async (clientRef) => {
             `
                 SELECT ${selectColumns.join(', ')}
                 FROM clientes
-                WHERE ${whereParts.join(' OR ')}
+                WHERE (${whereParts.join(' OR ')})
+                  ${activeColumn ? `AND \`${activeColumn}\` <> 0` : ''}
                 LIMIT 1
             `,
             params
@@ -1581,6 +1605,95 @@ exports.updateLoyaltyConfig = async (data) => {
     };
 };
 
+exports.createClient = async (data) => {
+    await ensureLoyaltyInfrastructure();
+
+    const columns = await getTableColumns('clientes');
+    const codeColumn = findColumn(columns, ['codigo_cliente', 'codigo', 'cod_cliente']);
+    const nameColumn = findColumn(columns, ['nombre', 'nombres', 'nombre_cliente', 'razon_social']);
+    const emailColumn = findColumn(columns, ['correo', 'email', 'mail', 'correo_electronico']);
+    const phoneColumn = findColumn(columns, ['numero', 'telefono', 'celular', 'telefono_movil', 'telefono1']);
+    const addressColumn = findColumn(columns, ['direccion', 'domicilio', 'direccion_fiscal']);
+    const nitColumn = findColumn(columns, ['nit', 'nit_cliente', 'ruc', 'tax_id']);
+    const activeColumn = findColumn(columns, ['activo', 'active', 'estado']);
+
+    const nombre = String(data?.nombre || '').trim();
+    const correo = String(data?.correo || '').trim();
+    const numero = String(data?.numero || '').trim();
+    const direccion = String(data?.direccion || '').trim();
+    const nit = String(data?.nit || '').trim();
+
+    if (!nombre && !correo && !numero && !direccion && !nit) {
+        throw new Error('Ingresa al menos nombre, correo, número, dirección o NIT');
+    }
+
+    const insertColumns = [];
+    const placeholders = [];
+    const params = [];
+
+    let codigoCliente = String(data?.codigo_cliente || data?.codigo || '').trim();
+    if (codeColumn) {
+        codigoCliente = codigoCliente || await generateUniqueClientCode(codeColumn);
+        insertColumns.push(`\`${codeColumn}\``);
+        placeholders.push('?');
+        params.push(codigoCliente);
+    }
+
+    if (nameColumn) {
+        insertColumns.push(`\`${nameColumn}\``);
+        placeholders.push('?');
+        params.push(nombre || null);
+    }
+
+    if (emailColumn) {
+        insertColumns.push(`\`${emailColumn}\``);
+        placeholders.push('?');
+        params.push(correo || null);
+    }
+
+    if (phoneColumn) {
+        insertColumns.push(`\`${phoneColumn}\``);
+        placeholders.push('?');
+        params.push(numero || null);
+    }
+
+    if (addressColumn) {
+        insertColumns.push(`\`${addressColumn}\``);
+        placeholders.push('?');
+        params.push(direccion || null);
+    }
+
+    if (nitColumn) {
+        insertColumns.push(`\`${nitColumn}\``);
+        placeholders.push('?');
+        params.push(nit || null);
+    }
+
+    if (activeColumn) {
+        insertColumns.push(`\`${activeColumn}\``);
+        placeholders.push('?');
+        params.push(1);
+    }
+
+    if (insertColumns.length === 0) {
+        throw new Error('No hay columnas válidas para crear el cliente');
+    }
+
+    const [result] = await db.execute(
+        `
+            INSERT INTO clientes (${insertColumns.join(', ')})
+            VALUES (${placeholders.join(', ')})
+        `,
+        params
+    );
+
+    return {
+        message: 'Cliente registrado correctamente',
+        cliente_id: result.insertId || null,
+        codigo_cliente: codigoCliente || null
+    };
+};
+
 exports.updateClient = async (clientRef, data) => {
     const ref = String(clientRef || '').trim();
     if (!ref) {
@@ -1654,27 +1767,28 @@ exports.deleteClient = async (clientRef) => {
     const columns = await getTableColumns('clientes');
     const idColumn = findColumn(columns, ['id', 'cliente_id', 'id_cliente']);
     const codeColumn = findColumn(columns, ['codigo_cliente', 'codigo', 'cod_cliente']);
+    let activeColumn = findColumn(columns, ['activo', 'active', 'estado']);
+
+    if (!activeColumn) {
+        await ensureClientActiveColumn();
+        activeColumn = 'activo';
+    }
 
     const filter = buildClientReferenceFilter(ref, idColumn, codeColumn);
     const sql = `
-        DELETE FROM clientes
+        UPDATE clientes
+        SET \`${activeColumn}\` = 0
         WHERE ${filter.whereSql}
+          AND \`${activeColumn}\` <> 0
         LIMIT 1
     `;
 
-    try {
-        const [result] = await db.execute(sql, filter.whereParams);
-        if (result.affectedRows === 0) {
-            throw new Error('Cliente no encontrado');
-        }
-
-        return { message: 'Cliente eliminado correctamente' };
-    } catch (error) {
-        if (error && (error.code === 'ER_ROW_IS_REFERENCED_2' || error.code === 'ER_ROW_IS_REFERENCED')) {
-            throw new Error('No se puede eliminar el cliente porque tiene registros relacionados');
-        }
-        throw error;
+    const [result] = await db.execute(sql, filter.whereParams);
+    if (result.affectedRows === 0) {
+        throw new Error('Cliente no encontrado');
     }
+
+    return { message: 'Cliente eliminado correctamente' };
 };
 
 // Función para obtener las ventas confirmadas de un vendedor específico, con límite opcional.
