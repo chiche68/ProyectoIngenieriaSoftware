@@ -56,7 +56,7 @@ function auditRequests(req, res, next) {
         }
 
         const routePath = String(req.baseUrl || '').trim() + String(req.path || '').trim();
-        const details = {
+        const detalles = {
             params: sanitizeValue(req.params || {}),
             query: sanitizeValue(req.query || {}),
             body: sanitizeValue(req.body || {}),
