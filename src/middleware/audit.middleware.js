@@ -1,6 +1,6 @@
 const { recordAuditEvent } = require('../services/audit.service');
 
-const AUDITED_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const AUDITED_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const IGNORED_PATH_PREFIXES = ['/api/audit-logs'];
 const SENSITIVE_KEYS = new Set(['password', 'password_hash', 'token', 'authorization']);
 
@@ -21,16 +21,21 @@ function sanitizeValue(value) {
 
 function getAuditAction(method, routePath) {
     const cleanRoute = String(routePath || '').replace(/^\/api\//, '');
+    const normalizedMethod = String(method || '').toUpperCase();
+
+    if (normalizedMethod === 'GET') {
+        return `CONSULTAR ${cleanRoute}`;
+    }
     if (method === 'POST') {
         return `CREAR ${cleanRoute}`;
     }
-    if (method === 'PUT' || method === 'PATCH') {
+    if (normalizedMethod === 'PUT' || normalizedMethod === 'PATCH') {
         return `ACTUALIZAR ${cleanRoute}`;
     }
-    if (method === 'DELETE') {
+    if (normalizedMethod === 'DELETE') {
         return `ELIMINAR ${cleanRoute}`;
     }
-    return `${method} ${cleanRoute}`;
+    return `${normalizedMethod} ${cleanRoute}`;
 }
 
 function shouldIgnoreRequest(req) {
