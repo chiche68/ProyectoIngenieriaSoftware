@@ -233,4 +233,28 @@ ALTER TABLE canjes_premios
     FOREIGN KEY (factura_id) REFERENCES ventas(id)
     ON UPDATE RESTRICT
     ON DELETE SET NULL;
+
+-- ==========================================================
+-- 9) Bitácora de auditoría
+-- ==========================================================
+CREATE TABLE IF NOT EXISTS bitacoras_auditoria (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  usuario_id INT NULL,
+  usuario_nombre VARCHAR(120) NULL,
+  usuario_correo VARCHAR(190) NULL,
+  rol VARCHAR(40) NULL,
+  accion VARCHAR(190) NOT NULL,
+  recurso VARCHAR(190) NOT NULL,
+  metodo VARCHAR(10) NOT NULL,
+  ruta VARCHAR(255) NOT NULL,
+  estado_respuesta INT NOT NULL,
+  ip VARCHAR(60) NULL,
+  user_agent VARCHAR(255) NULL,
+  detalles LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_bitacora_usuario_id (usuario_id),
+  KEY idx_bitacora_rol (rol),
+  KEY idx_bitacora_accion (accion),
+  KEY idx_bitacora_metodo (metodo),
+  KEY idx_bitacora_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

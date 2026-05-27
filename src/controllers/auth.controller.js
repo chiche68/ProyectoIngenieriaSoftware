@@ -1,4 +1,5 @@
 const service = require('../services/auth.service');
+const { recordAuditEvent } = require('../services/audit.service');
 
 exports.login = async (req, res) => {
     try {
@@ -18,6 +19,26 @@ exports.login = async (req, res) => {
                 error: 'Credenciales inválidas'
             });
         }
+
+        recordAuditEvent({
+            usuario_id: result.user?.id,
+            usuario_nombre: result.user?.nombre,
+            usuario_correo: result.user?.correo,
+            rol: result.user?.rol,
+            accion: 'INICIO DE SESIÓN',
+            recurso: 'auth/login',
+            metodo: 'POST',
+            ruta: '/api/auth/login',
+            estado_respuesta: 200,
+            ip: req.ip,
+            user_agent: req.get('user-agent') || '',
+            detalles: {
+                correo: result.user?.correo,
+                elapsed_ms: result.elapsed_ms
+            }
+        }).catch((auditError) => {
+            console.error('Error registrando login en bitácora:', auditError.message);
+        });
 
         return res.json({
             token: result.token,

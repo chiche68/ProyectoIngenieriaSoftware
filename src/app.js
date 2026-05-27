@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { initializeAuth } = require('./services/auth.service');
 const { authenticate, authorizeRoles } = require('./middleware/auth.middleware');
+const auditRequests = require('./middleware/audit.middleware');
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json());
+app.use(auditRequests);
 
 // Middleware de logging
 app.use((req, res, next) => {
@@ -70,6 +72,8 @@ app.get('/health', async (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     endpoints: [
+      '/api/auth/login',
+      '/api/audit-logs',
       '/api/tickets',
       '/api/interactions',
       '/api/sales',
@@ -94,6 +98,9 @@ app.get('/test', (req, res) => {
 // Rutas
 const authRoutes = require('./routes/auth.routes');
 app.use('/api/auth', authRoutes);
+
+const auditRoutes = require('./routes/audit.routes');
+app.use('/api/audit-logs', authenticate, authorizeRoles('it'), auditRoutes);
 
 const usersRoutes = require('./routes/users.routes');
 app.use('/api/users', authenticate, authorizeRoles('it'), usersRoutes);
