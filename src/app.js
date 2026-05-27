@@ -36,7 +36,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json());
-app.use(auditRequests);
 
 // Middleware de logging
 app.use((req, res, next) => {
@@ -103,21 +102,21 @@ const auditRoutes = require('./routes/audit.routes');
 app.use('/api/audit-logs', authenticate, authorizeRoles('it'), auditRoutes);
 
 const usersRoutes = require('./routes/users.routes');
-app.use('/api/users', authenticate, authorizeRoles('it'), usersRoutes);
+app.use('/api/users', authenticate, auditRequests, authorizeRoles('it'), usersRoutes);
 
 const ticketRoutes = require('./routes/ticket.routes');
-app.use('/api/tickets', authenticate, authorizeRoles('gerente', 'vendedor'), ticketRoutes);
+app.use('/api/tickets', authenticate, auditRequests, authorizeRoles('gerente', 'vendedor'), ticketRoutes);
 
 const interactionRoutes = require('./routes/interaction.routes');
-app.use('/api/interactions', authenticate, authorizeRoles('gerente', 'vendedor'), interactionRoutes);
+app.use('/api/interactions', authenticate, auditRequests, authorizeRoles('gerente', 'vendedor'), interactionRoutes);
 
 const salesRoutes = require('./routes/sales.routes');
-app.use('/api/sales', authenticate, salesRoutes);
+app.use('/api/sales', authenticate, auditRequests, salesRoutes);
 
 const opportunityRoutes = require('./routes/opportunity.routes');
-app.use('/api/opportunities', authenticate, authorizeRoles('gerente', 'vendedor'), opportunityRoutes);
+app.use('/api/opportunities', authenticate, auditRequests, authorizeRoles('gerente', 'vendedor'), opportunityRoutes);
 
 const rewardsRoutes = require('./routes/rewards.routes');
-app.use('/api/rewards', authenticate, authorizeRoles('gerente', 'vendedor'), rewardsRoutes);
+app.use('/api/rewards', authenticate, auditRequests, authorizeRoles('gerente', 'vendedor'), rewardsRoutes);
 
 module.exports = app;

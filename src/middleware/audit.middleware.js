@@ -1,6 +1,6 @@
 const { recordAuditEvent } = require('../services/audit.service');
 
-const AUDITED_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const AUDITED_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const IGNORED_PATH_PREFIXES = ['/api/audit-logs'];
 const SENSITIVE_KEYS = new Set(['password', 'password_hash', 'token', 'authorization']);
 
