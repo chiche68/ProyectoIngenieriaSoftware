@@ -3,6 +3,7 @@ const db = require('../config/database');
 const DEFAULT_POINTS_PER_AMOUNT = 10;
 const DEFAULT_POINTS_AWARDED = 1;
 const INVENTORY_PRODUCTS_API_URL = process.env.INVENTORY_PRODUCTS_API_URL || 'https://inventarioapi-the3.onrender.com/api/Productos';
+const INVENTORY_ORDERS_API_URL = process.env.INVENTORY_ORDERS_API_URL || 'https://inventarioapi-the3.onrender.com/api/PedidosClientes';
 
 function buildCouponCode() {
     const timestampPart = Date.now().toString(36).toUpperCase();
@@ -1081,6 +1082,32 @@ exports.create = async (data) => {
 
         await connection.commit();
 
+        // Intentar reenviar la venta al servicio de inventario externo (no obligatorio)
+        let externalResponse = null;
+        try {
+            const detalles = (saleItems || []).map((it) => ({
+                productoId: Number(it.productId || 0),
+                cantidad: Number(it.quantity || 0)
+            }));
+
+            if (detalles.length > 0) {
+                const resp = await fetch(INVENTORY_ORDERS_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ detalles })
+                });
+
+                if (resp.ok) {
+                    externalResponse = await resp.json();
+                } else {
+                    const errBody = await resp.text().catch(() => '');
+                    externalResponse = { error: `External API error ${resp.status}`, body: errBody };
+                }
+            }
+        } catch (externalErr) {
+            externalResponse = { error: String(externalErr?.message || externalErr) };
+        }
+
         return {
             message: 'Venta creada correctamente',
             id: result.insertId,
@@ -1095,7 +1122,8 @@ exports.create = async (data) => {
                 factura_id: result.insertId,
                 monto_por_punto: loyaltyConfig.monto_por_punto,
                 puntos_por_bloque: loyaltyConfig.puntos_por_bloque
-            }
+            },
+            external_order: externalResponse
         };
     } catch (error) {
         await connection.rollback();
